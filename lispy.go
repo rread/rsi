@@ -2,177 +2,35 @@ package main
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"math"
+	"os"
 	"reflect"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 type Token int
 type Number float64
 type Atom string
 type Item interface{}
+type ItemList []Item
 
-const (
-	ILLEGAL Token = iota
-	EOF
-	WS
-	ATOM
-	NUMBER
-	LEFT_PAREN
-	RIGHT_PAREN
-	QUOTE
-	DQUOTE
-)
-
-const eof = rune(0)
-
-func (t Token) String() string {
-	switch t {
-	case ILLEGAL:
-		return "ILLEGAL"
-	case EOF:
-		return "EOF"
-	case WS:
-		return "WS"
-	case ATOM:
-		return "ATOM"
-	case NUMBER:
-		return "NUMBER"
-	case LEFT_PAREN:
-		return "LEFT_PAREN"
-	case RIGHT_PAREN:
-		return "RIGHT_PAREN"
-	case QUOTE:
-		return "QUOTE"
-	case DQUOTE:
-		return "DQUOTE"
-	}
-	return "Unknown token: " + fmt.Sprintf("%d", t)
-}
-
-func isWhitespace(ch rune) bool {
-	return unicode.IsSpace(ch)
-}
-
-func isLetter(ch rune) bool {
-	if ch == '(' || ch == ')' || ch == '\'' || ch == '"' {
-		return false
-	}
-
-	return unicode.IsLetter(ch) || unicode.IsPunct(ch) || unicode.IsSymbol(ch)
-}
-
-func isNumber(ch rune) bool {
-	return unicode.IsNumber(ch)
-}
-
-type Scanner struct {
-	r *bufio.Reader
-}
-
-func NewScanner(r io.Reader) *Scanner {
-	return &Scanner{r: bufio.NewReader(r)}
-}
-
-func (s *Scanner) read() rune {
-	ch, _, err := s.r.ReadRune()
-	if err != nil {
-		return eof
-	}
-	return ch
-}
-
-func (s *Scanner) unread() {
-	_ = s.r.UnreadRune()
-}
-
-func (s *Scanner) Scan() (tok Token, lit string) {
-	ch := s.read()
-
-	if isWhitespace(ch) {
-		s.unread()
-		return s.scanWhitespace()
-	} else if isLetter(ch) {
-		s.unread()
-		return s.scanAtom()
-	} else if isNumber(ch) {
-		s.unread()
-		return s.scanNumber()
-	}
-
-	switch ch {
-	case eof:
-		return EOF, ""
-	case '(':
-		return LEFT_PAREN, string(ch)
-	case ')':
-		return RIGHT_PAREN, string(ch)
-	case '\'':
-		return QUOTE, string(ch)
-	case '"':
-		return DQUOTE, string(ch)
-	}
-
-	fmt.Println("illegal: ", string(ch))
-	return ILLEGAL, string(ch)
-}
-
-func (s *Scanner) scanWhitespace() (tok Token, lit string) {
-	var buf bytes.Buffer
-	buf.WriteRune(s.read())
-	for {
-		if ch := s.read(); ch == eof {
-			break
-		} else if !isWhitespace(ch) {
-			s.unread()
-			break
-		} else {
-			buf.WriteRune(ch)
+func (items ItemList) String() string {
+	s := "("
+	for n, i := range items {
+		if n > 0 {
+			s += " "
 		}
+		s += fmt.Sprintf("%v", i)
 	}
-	return WS, buf.String()
+	s += ")"
+	return s
 }
 
-func (s *Scanner) scanAtom() (tok Token, lit string) {
-	var buf bytes.Buffer
-	buf.WriteRune(s.read())
-	for {
-		if ch := s.read(); ch == eof {
-			break
-		} else if !isLetter(ch) && !isNumber(ch) && ch != '_' {
-			s.unread()
-			break
-		} else {
-			buf.WriteRune(ch)
-		}
-	}
-	return ATOM, buf.String()
-}
-
-func (s *Scanner) scanNumber() (tok Token, lit string) {
-	var buf bytes.Buffer
-	buf.WriteRune(s.read())
-	for {
-		if ch := s.read(); ch == eof {
-			break
-		} else if !isNumber(ch) {
-			s.unread()
-			break
-		} else {
-			buf.WriteRune(ch)
-		}
-	}
-	return NUMBER, buf.String()
-}
-
-func scan(s *Scanner) (Item, error) {
+func read(s *Scanner) (Item, error) {
 	tok, lit := s.Scan()
 	if tok == WS {
 		tok, lit = s.Scan()
@@ -180,7 +38,7 @@ func scan(s *Scanner) (Item, error) {
 	//	fmt.Println("scan:", tok, lit)
 	switch tok {
 	case LEFT_PAREN:
-		return scanList(s), nil
+		return readList(s), nil
 	case ATOM:
 		return Atom(lit), nil
 	case NUMBER:
@@ -195,10 +53,10 @@ func scan(s *Scanner) (Item, error) {
 	return nil, nil
 }
 
-func scanList(s *Scanner) Item {
-	var l []Item
+func readList(s *Scanner) Item {
+	var l ItemList
 	for {
-		c, _ := scan(s)
+		c, _ := read(s)
 		if c == nil {
 			break
 		}
@@ -208,10 +66,18 @@ func scanList(s *Scanner) Item {
 	return l
 }
 
-type foo map[Atom]Item
+type Binding map[Atom]Item
 type Env struct {
-	vars  foo
+	vars  Binding
 	outer *Env
+}
+
+func NewEnv(outer *Env) *Env {
+	return &Env{
+		vars:  make(Binding),
+		outer: outer,
+	}
+
 }
 
 func (env *Env) Find(a Atom) *Env {
@@ -222,7 +88,7 @@ func (env *Env) Find(a Atom) *Env {
 	}
 }
 
-func eval(expr interface{}, env Env) (interface{}, error) {
+func eval(expr Item, env *Env) (interface{}, error) {
 	//	fmt.Println(expr)
 	switch e := expr.(type) {
 	case Atom:
@@ -234,7 +100,7 @@ func eval(expr interface{}, env Env) (interface{}, error) {
 		}
 	case Number:
 		return e, nil
-	case []Item:
+	case ItemList:
 		switch car, _ := e[0].(Atom); car {
 		case "quote":
 			return e[1], nil
@@ -244,7 +110,7 @@ func eval(expr interface{}, env Env) (interface{}, error) {
 		case "set!":
 			a := e[1].(Atom)
 			env.Find(a).vars[a], _ = eval(e[2], env)
-			return env.vars[e[1].(Atom)], nil
+			return env.Find(a).vars[a], nil
 		case "if":
 			test, _ := eval(e[1], env)
 			if test.(bool) {
@@ -260,12 +126,16 @@ func eval(expr interface{}, env Env) (interface{}, error) {
 			}
 			return v, nil
 
+		case "quit":
+			os.Exit(0)
+		case "lambda":
+			return evalLambda(e, env)
 		default:
 			proc, err := eval(e[0], env)
 			if err != nil {
 				log.Println("Error1", err)
 			}
-			args := make([]Item, len(e)-1)
+			args := make(ItemList, len(e)-1)
 			for i, a := range e[1:] {
 				args[i], err = eval(a, env)
 				if err != nil {
@@ -278,15 +148,55 @@ func eval(expr interface{}, env Env) (interface{}, error) {
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
 }
 
-func apply(proc Item, args []Item, env Env) Item {
-	fn := proc.(func(...Item) Item)
-	return fn(args...)
+type Lambda struct {
+	params []Atom
+	body   Item
+	envt   *Env
 }
 
-func repl(in string, env Env) {
+func (l *Lambda) String() string {
+	return fmt.Sprintf("<function %p: %v>", l, l.body)
+}
+
+func evalLambda(expr ItemList, env *Env) (interface{}, error) {
+	l := Lambda{}
+	params, ok := expr[1].(ItemList)
+	if !ok {
+		log.Fatal("bad params:", expr[1])
+	}
+	for _, x := range params {
+		switch p := x.(type) {
+		case Atom:
+			l.params = append(l.params, p)
+		case []interface{}:
+			log.Fatal("combo param not supported:", x)
+		}
+
+	}
+	//	log.Printf("lambda %#v\n", expr[2])
+	l.body = expr[2]
+	l.envt = NewEnv(env)
+	return &l, nil
+
+}
+func apply(proc Item, args ItemList, env *Env) Item {
+	//	log.Printf("apply: %v args: %v\n", proc, args)
+	switch f := proc.(type) {
+	case func(...Item) Item:
+		return f(args...)
+	case *Lambda:
+		i, _ := eval(f.body, f.envt)
+		return i
+	default:
+		log.Fatalf("apply to a non function: %#v", proc)
+	}
+	return nil
+}
+
+func repl(in string, env *Env) {
 	s := NewScanner(strings.NewReader(in))
 	for {
-		expr, err := scan(s)
+		expr, err := read(s)
 		if err != nil {
 			break
 		}
@@ -295,22 +205,32 @@ func repl(in string, env Env) {
 		if err != nil {
 			fmt.Println("Error:", err)
 		} else {
-			fmt.Println(">>>", result)
+			fmt.Println("===>", result)
 		}
 	}
 }
 
-var defaultEnv Env
+func replCLI(env *Env) {
+	reader := (bufio.NewReader(os.Stdin))
+	for {
+		fmt.Print(">>> ")
+		text, _ := reader.ReadString('\n')
+		repl(text, env)
+	}
+}
+
+var defaultEnv *Env
 
 func init() {
-	defaultEnv = Env{
-		foo{"*": func(a ...Item) Item {
-			v := a[0].(Number)
-			for _, n := range a[1:] {
-				v *= n.(Number)
-			}
-			return v
-		},
+	defaultEnv = &Env{
+		Binding{
+			"*": func(a ...Item) Item {
+				v := a[0].(Number)
+				for _, n := range a[1:] {
+					v *= n.(Number)
+				}
+				return v
+			},
 			"/": func(a ...Item) Item {
 				v := a[0].(Number)
 				for _, n := range a[1:] {
@@ -354,4 +274,11 @@ func main() {
 	repl("(/ radius 10)", env)
 	repl("(quote (1  1))", env)
 	repl("123", env)
+	repl("(lambda () (+ 1 1))", env)
+	repl("((lambda () (+ 1 1)))", env)
+	repl("((lambda () (+ 1 1)))", env)
+	repl("(define foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
+	repl("(foo) (foo)", env)
+	repl("(foo) (foo)", env)
+	replCLI(env)
 }
