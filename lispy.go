@@ -22,7 +22,7 @@ type ItemList []Item
 type Number float64
 type Atom string
 type String string
-type NativeFunc func(...Item) (Item, error)
+type InternalFunc func(...Item) (Item, error)
 
 var Nil = Atom("NIL")
 
@@ -130,9 +130,9 @@ func eval(expr Item, env *Env) (interface{}, error) {
 		v, ok := env.Find(e).vars[e]
 		if ok {
 			return v, nil
-		} else {
-			return nil, fmt.Errorf("Undefined symbol: %v", e)
 		}
+		return nil, fmt.Errorf("Undefined symbol: %v", e)
+
 	case Number, String:
 		return e, nil
 	case ItemList:
@@ -201,7 +201,7 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 	l := Lambda{}
 	params, ok := expr[1].(ItemList)
 	if !ok {
-		return nil, fmt.Errorf("bad params:", expr[1])
+		return nil, fmt.Errorf("bad params: %v", expr[1])
 	}
 	for _, x := range params {
 		switch p := x.(type) {
@@ -222,7 +222,7 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 func apply(proc Item, args ItemList, env *Env) (Item, error) {
 	//	log.Printf("apply: %v args: %v\n", proc, args)
 	switch f := proc.(type) {
-	case NativeFunc:
+	case InternalFunc:
 		return f(args...)
 	case *Lambda:
 		if len(f.params) != len(args) {
@@ -235,7 +235,6 @@ func apply(proc Item, args ItemList, env *Env) (Item, error) {
 	default:
 		return nil, fmt.Errorf("apply to a non function: %#v", proc)
 	}
-	return nil, nil
 }
 
 func replReader(in io.Reader, env *Env) (interface{}, error) {
@@ -277,7 +276,7 @@ func replCLI(env *Env) {
 	}
 }
 
-func ApplyNumeric(f func(Number, Number) Number) NativeFunc {
+func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
 	return func(a ...Item) (Item, error) {
 		v, ok := a[0].(Number)
 		if !ok {
@@ -294,7 +293,7 @@ func ApplyNumeric(f func(Number, Number) Number) NativeFunc {
 	}
 }
 
-func ApplyNumericBool(f func(Number, Number) bool) NativeFunc {
+func ApplyNumericBool(f func(Number, Number) bool) InternalFunc {
 	return func(a ...Item) (Item, error) {
 		var ret bool
 		v, ok := a[0].(Number)
@@ -375,7 +374,7 @@ func DefaultEnv() *Env {
 			"=": ApplyNumericBool(func(x, y Number) bool {
 				return x == y
 			}),
-			"number?": NativeFunc(func(a ...Item) (Item, error) {
+			"number?": InternalFunc(func(a ...Item) (Item, error) {
 				if len(a) > 1 {
 					return nil, fmt.Errorf("Too many arguments for number?: %v", a)
 				}
@@ -384,7 +383,7 @@ func DefaultEnv() *Env {
 				}
 				return Item(false), nil
 			}),
-			"car": NativeFunc(func(a ...Item) (Item, error) {
+			"car": InternalFunc(func(a ...Item) (Item, error) {
 				if !isItemList(a[0]) {
 					return nil, fmt.Errorf("Not a list: %#v", a[0])
 				}
@@ -394,7 +393,7 @@ func DefaultEnv() *Env {
 				}
 				return a[0].(ItemList)[0], nil
 			}),
-			"cdr": NativeFunc(func(a ...Item) (Item, error) {
+			"cdr": InternalFunc(func(a ...Item) (Item, error) {
 				if !isItemList(a[0]) {
 					return nil, fmt.Errorf("Not a list: %#v", a[0])
 				}
@@ -404,7 +403,7 @@ func DefaultEnv() *Env {
 				}
 				return il[1:], nil
 			}),
-			"cons": NativeFunc(func(a ...Item) (Item, error) {
+			"cons": InternalFunc(func(a ...Item) (Item, error) {
 				if len(a) != 2 {
 					return nil, fmt.Errorf("wrong number of arguments given to cons")
 				}
@@ -416,7 +415,7 @@ func DefaultEnv() *Env {
 				}
 				return l, nil
 			}),
-			"equal?": NativeFunc(func(a ...Item) (Item, error) {
+			"equal?": InternalFunc(func(a ...Item) (Item, error) {
 				return reflect.DeepEqual(a[0], a[1]), nil
 			}),
 			"pi": Number(math.Pi),
