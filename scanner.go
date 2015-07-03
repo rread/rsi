@@ -8,6 +8,8 @@ import (
 	"unicode"
 )
 
+type Token int
+
 const (
 	ILLEGAL Token = iota
 	EOF
@@ -18,6 +20,7 @@ const (
 	RIGHT_PAREN
 	QUOTE
 	DQUOTE
+	STRING
 )
 
 const eof = rune(0)
@@ -42,6 +45,8 @@ func (t Token) String() string {
 		return "QUOTE"
 	case DQUOTE:
 		return "DQUOTE"
+	case STRING:
+		return "STRING"
 	}
 	return "Unknown token: " + fmt.Sprintf("%d", t)
 }
@@ -59,7 +64,7 @@ func isLetter(ch rune) bool {
 }
 
 func isNumber(ch rune) bool {
-	return unicode.IsNumber(ch)
+	return unicode.IsNumber(ch) || ch == '.'
 }
 
 type Scanner struct {
@@ -86,14 +91,21 @@ func (s *Scanner) Scan() (tok Token, lit string) {
 	ch := s.read()
 
 	if isWhitespace(ch) {
+		return s.scanWhitespace(ch)
+	} else if ch == '-' {
+		c2 := s.read()
 		s.unread()
-		return s.scanWhitespace()
-	} else if isLetter(ch) {
-		s.unread()
-		return s.scanAtom()
+		if isNumber(c2) {
+			return s.scanNumber(ch)
+		} else {
+			return s.scanAtom(ch)
+		}
 	} else if isNumber(ch) {
-		s.unread()
-		return s.scanNumber()
+		return s.scanNumber(ch)
+	} else if isLetter(ch) {
+		return s.scanAtom(ch)
+	} else if ch == '"' {
+		return s.scanString(ch)
 	}
 
 	switch ch {
@@ -113,9 +125,9 @@ func (s *Scanner) Scan() (tok Token, lit string) {
 	return ILLEGAL, string(ch)
 }
 
-func (s *Scanner) scanWhitespace() (tok Token, lit string) {
+func (s *Scanner) scanWhitespace(start rune) (tok Token, lit string) {
 	var buf bytes.Buffer
-	buf.WriteRune(s.read())
+	buf.WriteRune(start)
 	for {
 		if ch := s.read(); ch == eof {
 			break
@@ -129,9 +141,31 @@ func (s *Scanner) scanWhitespace() (tok Token, lit string) {
 	return WS, buf.String()
 }
 
-func (s *Scanner) scanAtom() (tok Token, lit string) {
+func (s *Scanner) scanString(start rune) (tok Token, lit string) {
 	var buf bytes.Buffer
-	buf.WriteRune(s.read())
+	var quoted bool
+	for {
+		ch := s.read()
+		if ch == eof {
+			break
+		} else if ch == '\\' {
+			quoted = true
+			buf.WriteRune(ch)
+			continue
+		} else if ch == '"' {
+			if !quoted {
+				break
+			}
+		}
+		buf.WriteRune(ch)
+		quoted = false
+	}
+
+	return STRING, buf.String()
+}
+func (s *Scanner) scanAtom(first rune) (tok Token, lit string) {
+	var buf bytes.Buffer
+	buf.WriteRune(first)
 	for {
 		if ch := s.read(); ch == eof {
 			break
@@ -145,9 +179,9 @@ func (s *Scanner) scanAtom() (tok Token, lit string) {
 	return ATOM, buf.String()
 }
 
-func (s *Scanner) scanNumber() (tok Token, lit string) {
+func (s *Scanner) scanNumber(start rune) (tok Token, lit string) {
 	var buf bytes.Buffer
-	buf.WriteRune(s.read())
+	buf.WriteRune(start)
 	for {
 		if ch := s.read(); ch == eof {
 			break
