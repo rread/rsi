@@ -18,6 +18,8 @@ type Atom string
 type Item interface{}
 type ItemList []Item
 
+var ErrorEOF = errors.New("End of File")
+
 func (items ItemList) String() string {
 	s := "("
 	for n, i := range items {
@@ -35,10 +37,10 @@ func read(s *Scanner) (Item, error) {
 	if tok == WS {
 		tok, lit = s.Scan()
 	}
-	//	fmt.Println("scan:", tok, lit)
+	// fmt.Println("scan:", tok, lit)
 	switch tok {
 	case LEFT_PAREN:
-		return readList(s), nil
+		return readList(s)
 	case ATOM:
 		return Atom(lit), nil
 	case NUMBER:
@@ -47,23 +49,28 @@ func read(s *Scanner) (Item, error) {
 			log.Println("Number fail:", err)
 		}
 		return Number(v), nil
+	case RIGHT_PAREN:
+		return nil, nil
 	case EOF:
-		return nil, errors.New("End of File")
+		return nil, ErrorEOF
 	}
-	return nil, nil
+	return nil, errors.New("Malformed input")
 }
 
-func readList(s *Scanner) Item {
+func readList(s *Scanner) (Item, error) {
 	var l ItemList
 	for {
-		c, _ := read(s)
+		c, err := read(s)
+		if err != nil {
+			return nil, fmt.Errorf("Failed to complete list: %v\n", err)
+		}
 		if c == nil {
 			break
 		}
 		l = append(l, c)
 
 	}
-	return l
+	return l, nil
 }
 
 type Binding map[Atom]Item
@@ -81,10 +88,13 @@ func NewEnv(outer *Env) *Env {
 }
 
 func (env *Env) Find(a Atom) *Env {
+	//	fmt.Println(a)
 	if _, ok := env.vars[a]; ok {
 		return env
-	} else {
+	} else if env.outer != nil {
 		return env.outer.Find(a)
+	} else {
+		return env
 	}
 }
 
@@ -105,7 +115,11 @@ func eval(expr Item, env *Env) (interface{}, error) {
 		case "quote":
 			return e[1], nil
 		case "define":
-			env.vars[e[1].(Atom)], _ = eval(e[2], env)
+			v, err := eval(e[2], env)
+			if err != nil {
+				return nil, err
+			}
+			env.vars[e[1].(Atom)] = v
 			return env.vars[e[1].(Atom)], nil
 		case "set!":
 			a := e[1].(Atom)
@@ -134,15 +148,17 @@ func eval(expr Item, env *Env) (interface{}, error) {
 			proc, err := eval(e[0], env)
 			if err != nil {
 				log.Println("Error1", err)
+				return nil, err
 			}
 			args := make(ItemList, len(e)-1)
 			for i, a := range e[1:] {
 				args[i], err = eval(a, env)
 				if err != nil {
 					log.Println("Error2", err)
+					return nil, err
 				}
 			}
-			return apply(proc, args, env), nil
+			return apply(proc, args, env)
 		}
 	}
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
@@ -162,7 +178,7 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 	l := Lambda{}
 	params, ok := expr[1].(ItemList)
 	if !ok {
-		log.Fatal("bad params:", expr[1])
+		return nil, fmt.Errorf("bad params:", expr[1])
 	}
 	for _, x := range params {
 		switch p := x.(type) {
@@ -179,33 +195,39 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 	return &l, nil
 
 }
-func apply(proc Item, args ItemList, env *Env) Item {
+func apply(proc Item, args ItemList, env *Env) (Item, error) {
 	//	log.Printf("apply: %v args: %v\n", proc, args)
 	switch f := proc.(type) {
 	case func(...Item) Item:
-		return f(args...)
+		return f(args...), nil
 	case *Lambda:
-		i, _ := eval(f.body, f.envt)
-		return i
+		if len(f.params) != len(args) {
+			log.Fatalf("parameter mismatch %v != %v", f.params, args)
+		}
+		for i, p := range f.params {
+			f.envt.vars[p] = args[i]
+		}
+		return eval(f.body, f.envt)
 	default:
 		log.Fatalf("apply to a non function: %#v", proc)
 	}
-	return nil
+	return nil, nil
 }
 
-func repl(in string, env *Env) {
+func repl(in string, env *Env) (interface{}, error) {
 	s := NewScanner(strings.NewReader(in))
+	var result interface{}
 	for {
+		var err error
 		expr, err := read(s)
 		if err != nil {
-			break
+			return result, err
 		}
-		fmt.Println(expr)
-		result, err := eval(expr, env)
+		//fmt.Println(expr)
+
+		result, err = eval(expr, env)
 		if err != nil {
-			fmt.Println("Error:", err)
-		} else {
-			fmt.Println("===>", result)
+			return result, err
 		}
 	}
 }
@@ -215,43 +237,48 @@ func replCLI(env *Env) {
 	for {
 		fmt.Print(">>> ")
 		text, _ := reader.ReadString('\n')
-		repl(text, env)
+		result, err := repl(text, env)
+		if err != nil && err != ErrorEOF {
+			fmt.Println("New Error:", err)
+		}
+		fmt.Println("===>", result)
 	}
 }
 
 var defaultEnv *Env
 
-func init() {
-	defaultEnv = &Env{
+func ApplyNumeric(f func(Number, Number) Number) func(a ...Item) Item {
+	return func(a ...Item) Item {
+		v, ok := a[0].(Number)
+		if !ok {
+			log.Fatalf("Not a number: %v", a[0])
+		}
+		for _, n := range a[1:] {
+			i, ok := n.(Number)
+			if !ok {
+				log.Fatalf("Not a number: %v", a[0])
+			}
+			v = f(v, i)
+		}
+		return v
+	}
+}
+
+func DefaultEnv() *Env {
+	return &Env{
 		Binding{
-			"*": func(a ...Item) Item {
-				v := a[0].(Number)
-				for _, n := range a[1:] {
-					v *= n.(Number)
-				}
-				return v
-			},
-			"/": func(a ...Item) Item {
-				v := a[0].(Number)
-				for _, n := range a[1:] {
-					v /= n.(Number)
-				}
-				return v
-			},
-			"+": func(a ...Item) Item {
-				v := a[0].(Number)
-				for _, n := range a[1:] {
-					v += n.(Number)
-				}
-				return v
-			},
-			"-": func(a ...Item) Item {
-				v := a[0].(Number)
-				for _, n := range a[1:] {
-					v -= n.(Number)
-				}
-				return v
-			},
+			"*": ApplyNumeric(func(x, y Number) Number {
+				return x * y
+			}),
+			"/": ApplyNumeric(func(x, y Number) Number {
+				return x / y
+			}),
+			"+": ApplyNumeric(func(x, y Number) Number {
+				return x + y
+			}),
+			"-": ApplyNumeric(func(x, y Number) Number {
+				return x - y
+			}),
 			"<=": func(a ...Item) Item {
 				return a[0].(Number) <= a[1].(Number)
 			},
@@ -263,22 +290,29 @@ func init() {
 		nil,
 	}
 }
+func init() {
+	defaultEnv = DefaultEnv()
+}
 
 func main() {
 	env := defaultEnv
-	repl("(define r 10)\n(define n 12)", env)
-	repl("(begin (define r 10)\n(define n 12))", env)
-	repl("(define radius (* pi (* r r)))", env)
-	repl("(if (<= 4 2) (* 10 2))", env)
-	repl("(if (<= 4 2) (* 10 2) (+ 1 2))", env)
-	repl("(/ radius 10)", env)
-	repl("(quote (1  1))", env)
-	repl("123", env)
-	repl("(lambda () (+ 1 1))", env)
-	repl("((lambda () (+ 1 1)))", env)
-	repl("((lambda () (+ 1 1)))", env)
-	repl("(define foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
-	repl("(foo) (foo)", env)
-	repl("(foo) (foo)", env)
+	/*
+		repl("(define r 10)\n(define n 12)", env)
+		repl("(begin (define r 10)\n(define n 12))", env)
+		repl("(define radius (* pi (* r r)))", env)
+		repl("(if (<= 4 2) (* 10 2))", env)
+		repl("(if (<= 4 2) (* 10 2) (+ 1 2))", env)
+		repl("(/ radius 10)", env)
+		repl("(quote (1  1))", env)
+		repl("123", env)
+		repl("(lambda () (+ 1 1))", env)
+		repl("((lambda () (+ 1 1)))", env)
+		repl("((lambda () (+ 1 1)))", env)
+		repl("(define foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
+		repl("(foo) (foo)", env)
+		repl("(foo) (foo)", env)
+		repl("(define plus (lambda (a b) (+ a b)))", env)
+		repl("(define counter (lambda (n) (lambda () (set! n (+ n 1)))))", env)
+	*/
 	replCLI(env)
 }
