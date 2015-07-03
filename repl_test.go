@@ -32,14 +32,42 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldEqual, -123)
 		})
 
+		Convey("If statements", func() {
+			val, err := repl("(if (<= 4 2) (* 10 2))", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, "NIL")
+
+			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, 3)
+
+			val, err = repl("(if (> 4 2) (* 10 2) (+ 1 2))", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, 20)
+
+			val, err = repl("(if '(1 2 ) (* 10 2) (+ 1 2))", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, 20)
+
+			val, err = repl("(if 'atom 'a 'b)", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, Atom("a"))
+
+			val, err = repl("(if '() 'a 'b)", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, Atom("b"))
+
+			val, err = repl("(if 0 'a 'b)", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, Atom("b"))
+
+			val, err = repl("(if \"\" 'a 'b)", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, Atom("a"))
+
+		})
+
 		Convey("Test statements", func() {
-			_, err := repl("(if (<= 4 2) (* 10 2))", env)
-			So(err, ShouldBeNil)
-
-			_, err = repl("(if (<= 4 2) (* 10 2) (+ 1 2))", env)
-			So(err, ShouldBeNil)
-			_, err = repl("(/ radius 10)", env)
-
 			val, err := repl("(quote (1  1))", env)
 			So(err, ShouldBeNil)
 			So(fmt.Sprintf("%v", val), ShouldEqual, "(1 1)")
@@ -209,7 +237,7 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(cdr (cdr (cdr (cons 1 '(2 3)))))", env)
 			So(err, ShouldBeNil)
-			SkipSo(fmt.Sprintf("%v", val), ShouldEqual, "()") // hmm, not using ItemList.String()
+			So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
 
 		})
 	})

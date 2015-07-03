@@ -24,6 +24,8 @@ type Atom string
 type String string
 type NativeFunc func(...Item) (Item, error)
 
+var Nil = Atom("NIL")
+
 var ErrorEOF = errors.New("End of File")
 
 func (items ItemList) String() string {
@@ -131,9 +133,7 @@ func eval(expr Item, env *Env) (interface{}, error) {
 		} else {
 			return nil, fmt.Errorf("Undefined symbol: %v", e)
 		}
-	case Number:
-		return e, nil
-	case String:
+	case Number, String:
 		return e, nil
 	case ItemList:
 		switch car, _ := e[0].(Atom); car {
@@ -152,12 +152,12 @@ func eval(expr Item, env *Env) (interface{}, error) {
 			return env.Find(a).vars[a], nil
 		case "if":
 			test, _ := eval(e[1], env)
-			if test.(bool) {
+			if isTrue(test) {
 				return eval(e[2], env)
 			} else if len(e) > 3 {
 				return eval(e[3], env)
 			}
-			return Atom("nil"), nil
+			return Nil, nil
 		case "begin":
 			var v Item
 			for _, e := range e[1:] {
@@ -316,6 +316,29 @@ func ApplyNumericBool(f func(Number, Number) bool) NativeFunc {
 	}
 }
 
+func isTrue(i Item) bool {
+	if b, ok := i.(bool); ok {
+		return b
+	}
+	if a, ok := i.(Atom); ok {
+		if a == Nil {
+			return false
+		}
+		return true
+	}
+	if n, ok := i.(Number); ok {
+		return !(n == 0)
+	}
+
+	if il, ok := i.(ItemList); ok {
+		return len(il) > 0
+	}
+	if _, ok := i.(String); ok {
+		return true
+	}
+	return false
+}
+
 func isItemList(i Item) bool {
 	if _, ok := i.(ItemList); ok {
 		return true
@@ -367,7 +390,7 @@ func DefaultEnv() *Env {
 				}
 				il := a[0].(ItemList)
 				if len(il) == 0 {
-					return []ItemList{}, nil
+					return Nil, nil
 				}
 				return a[0].(ItemList)[0], nil
 			}),
@@ -377,7 +400,7 @@ func DefaultEnv() *Env {
 				}
 				il := a[0].(ItemList)
 				if len(il) < 2 {
-					return []ItemList{}, nil
+					return Nil, nil
 				}
 				return il[1:], nil
 			}),
