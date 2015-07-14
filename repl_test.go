@@ -9,7 +9,25 @@ import (
 )
 
 func TestRepl(t *testing.T) {
+
 	Convey("repl basic testing", t, func() {
+		env := DefaultEnv()
+		val, err := repl("", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldBeNil)
+
+		val, err = repl("()", env)
+		So(err, ShouldBeNil)
+		So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
+
+		val, err = repl("123", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldEqual, 123)
+
+		return
+	})
+
+	Convey("testing", t, func() {
 		env := DefaultEnv()
 		Convey("Use unset variable n", func() {
 			val, err := repl("(+ n n)", env)
@@ -35,7 +53,7 @@ func TestRepl(t *testing.T) {
 		Convey("If statements", func() {
 			val, err := repl("(if (<= 4 2) (* 10 2))", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, "NIL")
+			So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
 
 			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)

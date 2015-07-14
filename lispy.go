@@ -24,7 +24,23 @@ type Atom string
 type String string
 type InternalFunc func(...Item) (Item, error)
 
-var Nil = Atom("NIL")
+type Tokenizer interface {
+	NextItem() *TokenItem
+}
+
+var T, Nil *Symbol
+
+func (a Atom) ToUpper() Atom {
+	return Atom(strings.ToUpper(string(a)))
+}
+
+func init() {
+	Nil = internSymbol(Atom("NIL"))
+	Nil.Bind("NIL")
+
+	T = internSymbol(Atom("t"))
+	T.Bind("T")
+}
 
 var ErrorEOF = errors.New("End of File")
 
@@ -41,51 +57,53 @@ func (items ItemList) String() string {
 }
 
 func (s String) String() string {
-	return fmt.Sprintf("\"%s\"", string(s))
+	return fmt.Sprintf(`"%s"`, string(s))
 }
 
-func read(s *Scanner) (Item, error) {
-	tok, lit := s.Scan()
-	if tok == WS {
-		tok, lit = s.Scan()
+func read(l Tokenizer) (Item, error) {
+	t := l.NextItem()
+	if t.token == WS {
+		t = l.NextItem()
 	}
-	//log.Println("scan:", tok, lit)
-	switch tok {
+	//log.Printf("scan: %v\n", t)
+	switch t.token {
 	case LEFT_PAREN:
-		return readList(s)
-	case ATOM:
-		return Atom(lit), nil
-	case QUOTE:
-		return readQuote(s)
-	case NUMBER:
-		v, err := strconv.ParseFloat(lit, 64)
-		if err != nil {
-			log.Println("Number fail:", err)
-		}
-		return Number(v), nil
+		return readList(l)
 	case RIGHT_PAREN:
 		return nil, nil
+	case ATOM:
+		return Atom(t.lit), nil
+	case QUOTE:
+		return readQuote(l)
+	case NUMBER:
+		v, err := strconv.ParseFloat(t.lit, 64)
+		if err != nil {
+			log.Fatal("Number fail:", err)
+		}
+		return Number(v), nil
 	case EOF:
 		return nil, ErrorEOF
 	case STRING:
-		return String(lit), nil
+		return String(t.lit), nil
+	case ILLEGAL:
+		return nil, errors.New(t.lit)
 	}
 	return nil, errors.New("Malformed input")
 }
 
-func readQuote(s *Scanner) (Item, error) {
+func readQuote(lex Tokenizer) (Item, error) {
 	l := ItemList{Atom("quote")}
-	c, err := read(s)
+	c, err := read(lex)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to complete list: %v\n", err)
 	}
 	return append(l, c), nil
 }
 
-func readList(s *Scanner) (Item, error) {
+func readList(lex Tokenizer) (Item, error) {
 	var l ItemList
 	for {
-		c, err := read(s)
+		c, err := read(lex)
 		if err != nil {
 			return nil, fmt.Errorf("Failed to complete list: %v\n", err)
 		}
@@ -124,7 +142,7 @@ func (env *Env) Find(a Atom) *Env {
 }
 
 func eval(expr Item, env *Env) (interface{}, error) {
-	//	fmt.Println(expr)
+	// log.Println(expr)
 	switch e := expr.(type) {
 	case Atom:
 		v, ok := env.Find(e).vars[e]
@@ -136,6 +154,9 @@ func eval(expr Item, env *Env) (interface{}, error) {
 	case Number, String:
 		return e, nil
 	case ItemList:
+		if len(e) == 0 {
+			return Nil, nil
+		}
 		switch car, _ := e[0].(Atom); car {
 		case "quote":
 			return e[1], nil
@@ -238,18 +259,21 @@ func apply(proc Item, args ItemList, env *Env) (Item, error) {
 }
 
 func replReader(in io.Reader, env *Env) (interface{}, error) {
-	s := NewScanner(in)
+	//	l := NewScanner(in)
+	buf := make([]byte, 1024)
+	n, _ := in.Read(buf)
+	l := NewLexer("lispy", string(buf[:n]))
 	var result interface{}
 	for {
 		var err error
-		expr, err := read(s)
+		expr, err := read(l)
+		//log.Println(expr, err)
 		if err != nil {
 			if err == ErrorEOF {
 				return result, nil
 			}
 			return result, err
 		}
-		// fmt.Println(expr)
 
 		result, err = eval(expr, env)
 		if err != nil {
@@ -265,7 +289,7 @@ func repl(in string, env *Env) (interface{}, error) {
 func replCLI(env *Env) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
-		fmt.Print("* ")
+		fmt.Print("-> ")
 		text, _ := reader.ReadString('\n')
 		result, err := repl(text, env)
 		if err != nil && err != ErrorEOF {
@@ -320,7 +344,7 @@ func isTrue(i Item) bool {
 		return b
 	}
 	if a, ok := i.(Atom); ok {
-		if a == Nil {
+		if internSymbol(a) == Nil {
 			return false
 		}
 		return true
@@ -425,5 +449,6 @@ func DefaultEnv() *Env {
 }
 
 func main() {
+	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	replCLI(DefaultEnv())
 }
