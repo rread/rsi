@@ -8,37 +8,69 @@ import (
 	. "github.com/smartystreets/goconvey/convey"
 )
 
+func S(v interface{}) string {
+	return fmt.Sprintf("%v", v)
+}
+
 func TestRepl(t *testing.T) {
 
-	Convey("repl basic testing", t, func() {
-		env := DefaultEnv()
+	Convey("basic lexer testing", t, func() {
+		env := EmptyEnv()
 		val, err := repl("", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldBeNil)
+
+		val, err = repl(" \t\r\n", env)
 		So(err, ShouldBeNil)
 		So(val, ShouldBeNil)
 
 		val, err = repl("()", env)
 		So(err, ShouldBeNil)
-		So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
+		So(val, ShouldEqual, Nil)
 
 		val, err = repl("123", env)
 		So(err, ShouldBeNil)
 		So(val, ShouldEqual, 123)
 
-		return
+		val, err = repl("\"123\"", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldEqual, "123")
+
+		val, err = repl("'-", env)
+		So(err, ShouldBeNil)
+		So(S(val), ShouldResemble, "-")
+
+		val, err = repl("  456  ", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldEqual, 456)
+
+		val, err = repl(`"bad string`, env)
+		So(err.Error(), ShouldContainSubstring, "unterminated string")
+
+		val, err = repl(`"string with \" quote`, env)
+		So(err.Error(), ShouldContainSubstring, "unterminated string")
+
+		val, err = repl(`"string with \"`, env)
+		So(err.Error(), ShouldContainSubstring, "unterminated string")
+
+		val, err = repl(`"string with \" quote"`, env)
+		So(err, ShouldBeNil)
+		So(val, ShouldEqual, `string with " quote`)
+
 	})
 
 	Convey("testing", t, func() {
 		env := DefaultEnv()
 		Convey("Use unset variable n", func() {
 			val, err := repl("(+ n n)", env)
-			So(err.Error(), ShouldContainSubstring, "Undefined symbol: n")
+			So(err.Error(), ShouldContainSubstring, "Undefined symbol: N")
 			So(val, ShouldBeNil)
 		})
 		Convey("Calculate radius from undefined variable", func() {
 			_, err := repl("(define radius (* pi (* r r)))", env)
-			So(err.Error(), ShouldContainSubstring, "Undefined symbol: r")
+			So(err.Error(), ShouldContainSubstring, "Undefined symbol: R")
 			_, err = repl("radius", env)
-			So(err.Error(), ShouldContainSubstring, "Undefined symbol: radius")
+			So(err.Error(), ShouldContainSubstring, "Undefined symbol: RADIUS")
 		})
 		Convey("Test Integer literals", func() {
 			val, err := repl("123", env)
@@ -53,7 +85,7 @@ func TestRepl(t *testing.T) {
 		Convey("If statements", func() {
 			val, err := repl("(if (<= 4 2) (* 10 2))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
+			So(S(val), ShouldEqual, "NIL")
 
 			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)
@@ -69,30 +101,30 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(if 'atom 'a 'b)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, Atom("a"))
+			So(S(val), ShouldResemble, "A")
 
 			val, err = repl("(if '() 'a 'b)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, Atom("b"))
+			So(S(val), ShouldEqual, ("B"))
 
 			val, err = repl("(if 0 'a 'b)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, Atom("b"))
+			So(S(val), ShouldEqual, "B")
 
 			val, err = repl("(if \"\" 'a 'b)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, Atom("a"))
+			So(S(val), ShouldEqual, "A")
 
 		})
 
 		Convey("Test statements", func() {
 			val, err := repl("(quote (1  1))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(1 1)")
+			So(S(val), ShouldEqual, "(1 1)")
 
 			val, err = repl("'(1  1)", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(1 1)")
+			So(S(val), ShouldEqual, "(1 1)")
 
 			_, err = repl("(lambda () (+ 1 1))", env)
 			So(err, ShouldBeNil)
@@ -101,7 +133,7 @@ func TestRepl(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, 2)
 
-			_, err = repl("(define foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
+			_, err = repl("(define  foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
 			So(err, ShouldBeNil)
 
 			val, err = repl("(foo) (foo)", env)
@@ -123,7 +155,7 @@ func TestRepl(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "parameter mismatch")
 
 			val, err = repl("(not-func 10)", env)
-			So(err.Error(), ShouldContainSubstring, "undefined-function: Undefined symbol: not-func")
+			So(err.Error(), ShouldContainSubstring, "undefined-function: Undefined symbol: NOT-FUNC")
 
 			val, err = repl("(equal? 1 1)", env)
 			So(err, ShouldBeNil)
@@ -146,18 +178,18 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldEqual, a-b)
 
 			val, err = repl(fmt.Sprintf("(- 'atom %v)", a), env)
-			So(err.Error(), ShouldContainSubstring, "Not a number: atom")
+			So(err.Error(), ShouldContainSubstring, "Not a number: ATOM")
 			val, err = repl(fmt.Sprintf("(- %v 'atom)", a), env)
-			So(err.Error(), ShouldContainSubstring, "Not a number: atom")
+			So(err.Error(), ShouldContainSubstring, "Not a number: ATOM")
 		})
 		Convey("Test numeric compare", func() {
 			var a float64 = -10.1
 			var b float64 = 40.123
 			var c float64 = 70
 			val, err := repl(fmt.Sprintf("(< %v 'atom)", a), env)
-			So(err.Error(), ShouldContainSubstring, "Not a number: atom")
+			So(err.Error(), ShouldContainSubstring, "Not a number: ATOM")
 			val, err = repl(fmt.Sprintf("(< 'atom %v)", a), env)
-			So(err.Error(), ShouldContainSubstring, "Not a number: atom")
+			So(err.Error(), ShouldContainSubstring, "Not a number: ATOM")
 			val, err = repl(fmt.Sprintf("(< %v %v)", a, b), env)
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, a < b)
@@ -235,27 +267,27 @@ func TestRepl(t *testing.T) {
 		Convey("Test cons", func() {
 			val, err := repl("(cons 1 2)", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(1 2)")
+			So(S(val), ShouldEqual, "(1 2)")
 
 			val, err = repl("(cons 1 '(2 3))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(1 2 3)")
+			So(S(val), ShouldEqual, "(1 2 3)")
 
 			val, err = repl("(car (cons 1 '(2 3)))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "1")
+			So(S(val), ShouldEqual, "1")
 
 			val, err = repl("(cdr (cons 1 '(2 3)))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(2 3)")
+			So(S(val), ShouldEqual, "(2 3)")
 
 			val, err = repl("(cdr (cdr (cons 1 '(2 3))))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "(3)")
+			So(S(val), ShouldEqual, "(3)")
 
 			val, err = repl("(cdr (cdr (cdr (cons 1 '(2 3)))))", env)
 			So(err, ShouldBeNil)
-			So(fmt.Sprintf("%v", val), ShouldEqual, "NIL")
+			So(S(val), ShouldEqual, "NIL")
 
 		})
 	})

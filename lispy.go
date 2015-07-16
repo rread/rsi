@@ -13,14 +13,13 @@ import (
 	"strings"
 )
 
-// Item is an Atom, Number, String, or Function
+// Item is an *Data, Number, String, or Function
 type Item interface{}
 
 // ItemList is a fundamental data type.
 type ItemList []Item
 
 type Number float64
-type Atom string
 type String string
 type InternalFunc func(...Item) (Item, error)
 
@@ -28,18 +27,14 @@ type Tokenizer interface {
 	NextItem() *TokenItem
 }
 
-var T, Nil *Symbol
-
-func (a Atom) ToUpper() Atom {
-	return Atom(strings.ToUpper(string(a)))
-}
+var (
+	T   *Data
+	Nil *Data
+)
 
 func init() {
-	Nil = internSymbol(Atom("NIL"))
-	Nil.Bind("NIL")
-
-	T = internSymbol(Atom("t"))
-	T.Bind("T")
+	Nil = internSymbol("NIL")
+	T = internSymbol("t")
 }
 
 var ErrorEOF = errors.New("End of File")
@@ -65,14 +60,14 @@ func read(l Tokenizer) (Item, error) {
 	if t.token == WS {
 		t = l.NextItem()
 	}
-	//log.Printf("scan: %v\n", t)
+	log.Printf("scan: %v\n", t)
 	switch t.token {
 	case LEFT_PAREN:
 		return readList(l)
 	case RIGHT_PAREN:
 		return nil, nil
-	case ATOM:
-		return Atom(t.lit), nil
+	case SYMBOL:
+		return internSymbol(t.lit), nil
 	case QUOTE:
 		return readQuote(l)
 	case NUMBER:
@@ -92,7 +87,7 @@ func read(l Tokenizer) (Item, error) {
 }
 
 func readQuote(lex Tokenizer) (Item, error) {
-	l := ItemList{Atom("quote")}
+	l := ItemList{internSymbol("quote")}
 	c, err := read(lex)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to complete list: %v\n", err)
@@ -116,62 +111,40 @@ func readList(lex Tokenizer) (Item, error) {
 	return l, nil
 }
 
-type Binding map[Atom]Item
-type Env struct {
-	vars  Binding
-	outer *Env
-}
-
-func NewEnv(outer *Env) *Env {
-	return &Env{
-		vars:  make(Binding),
-		outer: outer,
-	}
-
-}
-
-func (env *Env) Find(a Atom) *Env {
-	//	fmt.Println(a)
-	if _, ok := env.vars[a]; ok {
-		return env
-	} else if env.outer != nil {
-		return env.outer.Find(a)
-	} else {
-		return env
-	}
-}
-
 func eval(expr Item, env *Env) (interface{}, error) {
-	// log.Println(expr)
+	log.Printf("%v\n", expr)
 	switch e := expr.(type) {
-	case Atom:
-		v, ok := env.Find(e).vars[e]
-		if ok {
-			return v, nil
+	case *Data:
+		switch e.Type {
+		case SymbolType:
+			return env.FindVar(e)
 		}
-		return nil, fmt.Errorf("Undefined symbol: %v", e)
-
 	case Number, String:
 		return e, nil
 	case ItemList:
 		if len(e) == 0 {
 			return Nil, nil
 		}
-		switch car, _ := e[0].(Atom); car {
-		case "quote":
+		switch car, _ := e[0].(*Data); car.StringValue() {
+		case "QUOTE":
 			return e[1], nil
-		case "define":
+		case "DEFINE":
 			v, err := eval(e[2], env)
 			if err != nil {
 				return nil, err
 			}
-			env.vars[e[1].(Atom)] = v
-			return env.vars[e[1].(Atom)], nil
-		case "set!":
-			a := e[1].(Atom)
-			env.Find(a).vars[a], _ = eval(e[2], env)
-			return env.Find(a).vars[a], nil
-		case "if":
+			env.Bind(e[1].(*Data), v)
+			return env.Var(e[1].(*Data))
+		case "SET!":
+			d := e[1].(*Data)
+			var err error
+			val, err := eval(e[2], env)
+			if err != nil {
+				return nil, err
+			}
+			env.Find(d).Bind(d, val)
+			return val, nil
+		case "IF":
 			test, _ := eval(e[1], env)
 			if isTrue(test) {
 				return eval(e[2], env)
@@ -179,17 +152,23 @@ func eval(expr Item, env *Env) (interface{}, error) {
 				return eval(e[3], env)
 			}
 			return Nil, nil
-		case "begin":
+		case "BEGIN":
 			var v Item
 			for _, e := range e[1:] {
 				v, _ = eval(e, env)
 			}
 			return v, nil
 
-		case "quit":
+		case "QUIT":
 			os.Exit(0)
-		case "lambda":
+		case "LAMBDA":
 			return evalLambda(e, env)
+		case ":VARS":
+			for k, v := range env.vars {
+				log.Printf("%v: %v\n", k, v)
+			}
+			return nil, nil
+
 		default:
 			proc, err := eval(e[0], env)
 			if err != nil {
@@ -209,7 +188,7 @@ func eval(expr Item, env *Env) (interface{}, error) {
 }
 
 type Lambda struct {
-	params []Atom
+	params []*Data
 	body   Item
 	envt   *Env
 }
@@ -226,7 +205,7 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 	}
 	for _, x := range params {
 		switch p := x.(type) {
-		case Atom:
+		case *Data:
 			l.params = append(l.params, p)
 		case []interface{}:
 			return nil, fmt.Errorf("combo param not supported: %v", x)
@@ -250,9 +229,11 @@ func apply(proc Item, args ItemList, env *Env) (Item, error) {
 			return nil, fmt.Errorf("parameter mismatch %v != %v", f.params, args)
 		}
 		for i, p := range f.params {
-			f.envt.vars[p] = args[i]
+			f.envt.Bind(p, args[i])
 		}
 		return eval(f.body, f.envt)
+	case *Data:
+		return eval(proc, env)
 	default:
 		return nil, fmt.Errorf("apply to a non function: %#v", proc)
 	}
@@ -343,8 +324,8 @@ func isTrue(i Item) bool {
 	if b, ok := i.(bool); ok {
 		return b
 	}
-	if a, ok := i.(Atom); ok {
-		if internSymbol(a) == Nil {
+	if a, ok := i.(*Data); ok {
+		if a == Nil {
 			return false
 		}
 		return true
@@ -368,84 +349,87 @@ func isItemList(i Item) bool {
 	}
 	return false
 }
+func EmptyEnv() *Env {
+	return NewEnv(nil)
+}
+
 func DefaultEnv() *Env {
-	return &Env{
-		Binding{
-			"*": ApplyNumeric(func(x, y Number) Number {
-				return x * y
-			}),
-			"/": ApplyNumeric(func(x, y Number) Number {
-				return x / y
-			}),
-			"+": ApplyNumeric(func(x, y Number) Number {
-				return x + y
-			}),
-			"-": ApplyNumeric(func(x, y Number) Number {
-				return x - y
-			}),
-			"<": ApplyNumericBool(func(x, y Number) bool {
-				return x < y
-			}),
-			"<=": ApplyNumericBool(func(x, y Number) bool {
-				return x <= y
-			}),
-			">": ApplyNumericBool(func(x, y Number) bool {
-				return x > y
-			}),
-			">=": ApplyNumericBool(func(x, y Number) bool {
-				return x >= y
-			}),
-			"=": ApplyNumericBool(func(x, y Number) bool {
-				return x == y
-			}),
-			"number?": InternalFunc(func(a ...Item) (Item, error) {
-				if len(a) > 1 {
-					return nil, fmt.Errorf("Too many arguments for number?: %v", a)
-				}
-				if _, ok := a[0].(Number); ok {
-					return Item(true), nil
-				}
-				return Item(false), nil
-			}),
-			"car": InternalFunc(func(a ...Item) (Item, error) {
-				if !isItemList(a[0]) {
-					return nil, fmt.Errorf("Not a list: %#v", a[0])
-				}
-				il := a[0].(ItemList)
-				if len(il) == 0 {
-					return Nil, nil
-				}
-				return a[0].(ItemList)[0], nil
-			}),
-			"cdr": InternalFunc(func(a ...Item) (Item, error) {
-				if !isItemList(a[0]) {
-					return nil, fmt.Errorf("Not a list: %#v", a[0])
-				}
-				il := a[0].(ItemList)
-				if len(il) < 2 {
-					return Nil, nil
-				}
-				return il[1:], nil
-			}),
-			"cons": InternalFunc(func(a ...Item) (Item, error) {
-				if len(a) != 2 {
-					return nil, fmt.Errorf("wrong number of arguments given to cons")
-				}
-				l := ItemList{a[0]}
-				if il, ok := a[1].(ItemList); ok {
-					l = append(l, il...)
-				} else {
-					l = append(l, a[1])
-				}
-				return l, nil
-			}),
-			"equal?": InternalFunc(func(a ...Item) (Item, error) {
-				return reflect.DeepEqual(a[0], a[1]), nil
-			}),
-			"pi": Number(math.Pi),
-		},
-		nil,
-	}
+	env := EmptyEnv()
+	env.BindName("*", ApplyNumeric(func(x, y Number) Number {
+		return x * y
+	}))
+
+	env.BindName("-", ApplyNumeric(func(x, y Number) Number {
+		return x - y
+	}))
+
+	env.BindName("/", ApplyNumeric(func(x, y Number) Number {
+		return x / y
+	}))
+	env.BindName("+", ApplyNumeric(func(x, y Number) Number {
+		return x + y
+	}))
+	env.BindName("<", ApplyNumericBool(func(x, y Number) bool {
+		return x < y
+	}))
+	env.BindName("<=", ApplyNumericBool(func(x, y Number) bool {
+		return x <= y
+	}))
+	env.BindName(">", ApplyNumericBool(func(x, y Number) bool {
+		return x > y
+	}))
+	env.BindName(">=", ApplyNumericBool(func(x, y Number) bool {
+		return x >= y
+	}))
+	env.BindName("=", ApplyNumericBool(func(x, y Number) bool {
+		return x == y
+	}))
+	env.BindName("number?", InternalFunc(func(a ...Item) (Item, error) {
+		if len(a) > 1 {
+			return nil, fmt.Errorf("Too many arguments for number?: %v", a)
+		}
+		if _, ok := a[0].(Number); ok {
+			return Item(true), nil
+		}
+		return Item(false), nil
+	}))
+	env.BindName("car", InternalFunc(func(a ...Item) (Item, error) {
+		if !isItemList(a[0]) {
+			return nil, fmt.Errorf("Not a list: %#v", a[0])
+		}
+		il := a[0].(ItemList)
+		if len(il) == 0 {
+			return Nil, nil
+		}
+		return a[0].(ItemList)[0], nil
+	}))
+	env.BindName("cdr", InternalFunc(func(a ...Item) (Item, error) {
+		if !isItemList(a[0]) {
+			return nil, fmt.Errorf("Not a list: %#v", a[0])
+		}
+		il := a[0].(ItemList)
+		if len(il) < 2 {
+			return Nil, nil
+		}
+		return il[1:], nil
+	}))
+	env.BindName("cons", InternalFunc(func(a ...Item) (Item, error) {
+		if len(a) != 2 {
+			return nil, fmt.Errorf("wrong number of arguments given to cons")
+		}
+		l := ItemList{a[0]}
+		if il, ok := a[1].(ItemList); ok {
+			l = append(l, il...)
+		} else {
+			l = append(l, a[1])
+		}
+		return l, nil
+	}))
+	env.BindName("equal?", InternalFunc(func(a ...Item) (Item, error) {
+		return reflect.DeepEqual(a[0], a[1]), nil
+	}))
+	env.BindName("pi", Number(math.Pi))
+	return env
 }
 
 func main() {

@@ -13,7 +13,7 @@ const (
 	ILLEGAL Token = iota
 	EOF
 	WS
-	ATOM
+	SYMBOL
 	NUMBER
 	LEFT_PAREN
 	RIGHT_PAREN
@@ -32,8 +32,8 @@ func (t Token) String() string {
 		return "EOF"
 	case WS:
 		return "WS"
-	case ATOM:
-		return "ATOM"
+	case SYMBOL:
+		return "SYMBOL"
 	case NUMBER:
 		return "NUMBER"
 	case LEFT_PAREN:
@@ -76,7 +76,7 @@ type TokenItem struct {
 }
 
 func (tok *TokenItem) String() string {
-	return fmt.Sprintf("%s '%s'", tok.token, tok.lit)
+	return fmt.Sprintf("%s %#v", tok.token, tok.lit)
 }
 
 type Lexer struct {
@@ -101,12 +101,14 @@ func (l *Lexer) NextItem() *TokenItem {
 	return <-l.items
 }
 
+// peek returns the next rune but leaves the range unchanged.
 func (l *Lexer) peek() rune {
 	ch := l.next()
 	l.rewind()
 	return ch
 }
 
+// next returns the next rune and extends current input range.
 func (l *Lexer) next() (ch rune) {
 	if l.pos >= len(l.input) {
 		l.width = 0
@@ -117,16 +119,27 @@ func (l *Lexer) next() (ch rune) {
 	return ch
 }
 
+// skip removes the current token from the input in a rather ineffecient way.
+func (l *Lexer) skip() {
+	w := l.width
+	l.rewind()
+	l.input = l.input[:l.pos] + l.input[l.pos+w:]
+}
+
+// ignore skips current input range up to current rune.
 func (l *Lexer) ignore() {
 	l.start = l.pos
 }
 
+// emit sends the current range as a t token and resets
+// the range.
 func (l *Lexer) emit(t Token) {
 	l.items <- &TokenItem{token: t,
 		lit: l.input[l.start:l.pos]}
 	l.start = l.pos
 }
 
+// rewind moves end of range to previous rune.
 func (l *Lexer) rewind() {
 	l.pos -= l.width
 	l.width = 0
@@ -148,9 +161,9 @@ func (l *Lexer) accept(valid string) bool {
 }
 
 func (l *Lexer) acceptRun(valid string) {
-	for strings.IndexRune(valid, l.next()) >= 0 {
-	}
-	l.rewind()
+	l.acceptRunFn(func(r rune) bool {
+		return strings.IndexRune(valid, r) >= 0
+	})
 }
 
 func (l *Lexer) acceptRunFn(test func(rune) bool) {
@@ -197,14 +210,13 @@ func lexBase(l *Lexer) stateFn {
 			return lexAtom
 		}
 	}
-	return lexBase
 }
 
 func atomOrNumber(l *Lexer) stateFn {
 	ch := l.peek()
 	if ch == eof {
-		l.emit(EOF)
-		return nil
+		l.emit(SYMBOL)
+		return lexBase
 	}
 	if isNumber(ch) {
 		return lexNumber
@@ -220,7 +232,7 @@ func lexNumber(l *Lexer) stateFn {
 
 func lexAtom(l *Lexer) stateFn {
 	l.acceptRunFn(isAtom)
-	l.emit(ATOM)
+	l.emit(SYMBOL)
 	return lexBase
 }
 
@@ -228,18 +240,16 @@ func lexString(l *Lexer) stateFn {
 	for {
 		switch ch := l.next(); {
 		case ch == eof:
-			return l.errorf("unterminated string")
+			return l.errorf("unterminated string: '%v'", l.input[l.start:l.pos])
 		case ch == '\\':
+			l.skip()
 			ch := l.next()
 			if ch == eof {
-				return l.errorf("unterminated string")
-
+				return l.errorf("unterminated string: %#v", l.input[l.start:l.pos])
 			}
 		case ch == '"':
-			l.rewind()
+			l.skip()
 			l.emit(STRING)
-			l.next()
-			l.ignore()
 			return lexBase
 		}
 	}
