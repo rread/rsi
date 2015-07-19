@@ -13,40 +13,31 @@ const (
 	NativeType
 )
 
-type Data struct {
-	Type  DataType
-	Value interface{}
+func StringWithValue(v string) String {
+	return String(v)
 }
 
-func (d *Data) String() string {
-	switch d.Type {
-	case SymbolType:
-		return d.StringValue()
-	}
-	return ""
+func SymbolWithName(n string) Symbol {
+	return Symbol(strings.ToUpper(n))
 }
 
-func (d *Data) StringValue() string {
-	if d == nil {
-		return ""
-	}
-	return d.Value.(string)
+func Symbolp(i Data) bool {
+	_, ok := i.(Symbol)
+	return ok
 }
 
-func SymbolWithName(n string) *Data {
-	return &Data{
-		Type:  SymbolType,
-		Value: n,
-	}
+func Stringp(i Data) bool {
+	_, ok := i.(String)
+	return ok
 }
 
-var internedSymbols = make(map[string]*Data, 1024)
+var internedSymbols = make(map[string]Symbol, 1024)
 
-func internSymbol(name string) *Data {
+func internSymbol(name string) Symbol {
 	// Force uppercase symbol names
 	name = strings.ToUpper(name)
 	sym, ok := internedSymbols[name]
-	if !ok || sym == nil {
+	if !ok || sym == "" {
 		sym = SymbolWithName(name)
 		internedSymbols[name] = sym
 	}

@@ -13,23 +13,47 @@ import (
 	"strings"
 )
 
-// Item is an *Data, Number, String, or Function
-type Item interface{}
+// Item is an *Data, Number,  or Function
+type Data interface {
+	String() string
+}
 
 // ItemList is a fundamental data type.
-type ItemList []Item
+type DataList []Data
 
+type Symbol string
+type Boolean bool
 type Number float64
 type String string
-type InternalFunc func(...Item) (Item, error)
+type InternalFunc func(...Data) (Data, error)
+
+func (sym Symbol) String() string {
+	return string(sym)
+}
+
+func (num Number) String() string {
+	return fmt.Sprintf("%v", float64(num))
+}
+
+func (fun InternalFunc) String() string {
+	return fmt.Sprintf("native-func '%v'", ((func(...Data) (Data, error))(fun)))
+}
+
+func (b Boolean) String() string {
+	return fmt.Sprintf("%v", bool(b))
+}
+
+func (s String) String() string {
+	return fmt.Sprintf(`"%s"`, string(s))
+}
 
 type Tokenizer interface {
 	NextItem() *TokenItem
 }
 
 var (
-	T   *Data
-	Nil *Data
+	T   Symbol
+	Nil Symbol
 )
 
 func init() {
@@ -39,7 +63,7 @@ func init() {
 
 var ErrorEOF = errors.New("End of File")
 
-func (items ItemList) String() string {
+func (items DataList) String() string {
 	s := "("
 	for n, i := range items {
 		if n > 0 {
@@ -51,11 +75,27 @@ func (items ItemList) String() string {
 	return s
 }
 
-func (s String) String() string {
-	return fmt.Sprintf(`"%s"`, string(s))
+func Car(items DataList) Data {
+	return items[0]
 }
 
-func read(l Tokenizer) (Item, error) {
+func Cdr(items DataList) DataList {
+	return items[1:]
+}
+
+func Cadr(items DataList) Data {
+	return items[1]
+}
+
+func Caddr(items DataList) Data {
+	return items[2]
+}
+
+func Cadddr(items DataList) Data {
+	return items[3]
+}
+
+func read(l Tokenizer) (Data, error) {
 	t := l.NextItem()
 	if t.token == WS {
 		t = l.NextItem()
@@ -79,15 +119,15 @@ func read(l Tokenizer) (Item, error) {
 	case EOF:
 		return nil, ErrorEOF
 	case STRING:
-		return String(t.lit), nil
+		return StringWithValue(t.lit), nil
 	case ILLEGAL:
 		return nil, errors.New(t.lit)
 	}
 	return nil, errors.New("Malformed input")
 }
 
-func readQuote(lex Tokenizer) (Item, error) {
-	l := ItemList{internSymbol("quote")}
+func readQuote(lex Tokenizer) (Data, error) {
+	l := DataList{internSymbol("quote")}
 	c, err := read(lex)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to complete list: %v\n", err)
@@ -95,8 +135,8 @@ func readQuote(lex Tokenizer) (Item, error) {
 	return append(l, c), nil
 }
 
-func readList(lex Tokenizer) (Item, error) {
-	var l ItemList
+func readList(lex Tokenizer) (Data, error) {
+	var l DataList
 	for {
 		c, err := read(lex)
 		if err != nil {
@@ -111,50 +151,51 @@ func readList(lex Tokenizer) (Item, error) {
 	return l, nil
 }
 
-func eval(expr Item, env *Env) (interface{}, error) {
-	log.Printf("%v\n", expr)
+func eval(expr Data, env *Env) (Data, error) {
+	log.Printf("%T: %v\n", expr, expr)
 	switch e := expr.(type) {
-	case *Data:
-		switch e.Type {
-		case SymbolType:
+	case Symbol:
+		{
 			return env.FindVar(e)
 		}
-	case Number, String:
+	case Number:
 		return e, nil
-	case ItemList:
+	case String:
+		return e, nil
+	case DataList:
 		if len(e) == 0 {
 			return Nil, nil
 		}
-		switch car, _ := e[0].(*Data); car.StringValue() {
+		switch car, _ := e[0].(Symbol); car.String() {
 		case "QUOTE":
-			return e[1], nil
+			return Cadr(e), nil
 		case "DEFINE":
-			v, err := eval(e[2], env)
+			v, err := eval(Caddr(e), env)
 			if err != nil {
 				return nil, err
 			}
-			env.Bind(e[1].(*Data), v)
-			return env.Var(e[1].(*Data))
+			env.Bind(e[1].(Symbol), v)
+			return env.Var(e[1].(Symbol))
 		case "SET!":
-			d := e[1].(*Data)
+			d := e[1].(Symbol)
 			var err error
-			val, err := eval(e[2], env)
+			val, err := eval(Caddr(e), env)
 			if err != nil {
 				return nil, err
 			}
 			env.Find(d).Bind(d, val)
 			return val, nil
 		case "IF":
-			test, _ := eval(e[1], env)
+			test, _ := eval(Cadr(e), env)
 			if isTrue(test) {
-				return eval(e[2], env)
+				return eval(Caddr(e), env)
 			} else if len(e) > 3 {
-				return eval(e[3], env)
+				return eval(Cadddr(e), env)
 			}
 			return Nil, nil
 		case "BEGIN":
-			var v Item
-			for _, e := range e[1:] {
+			var v Data
+			for _, e := range Cdr(e) {
 				v, _ = eval(e, env)
 			}
 			return v, nil
@@ -170,11 +211,11 @@ func eval(expr Item, env *Env) (interface{}, error) {
 			return nil, nil
 
 		default:
-			proc, err := eval(e[0], env)
+			proc, err := eval(Car(e), env)
 			if err != nil {
 				return nil, fmt.Errorf("undefined-function: %v", err)
 			}
-			args := make(ItemList, len(e)-1)
+			args := make(DataList, len(e)-1)
 			for i, a := range e[1:] {
 				args[i], err = eval(a, env)
 				if err != nil {
@@ -188,8 +229,8 @@ func eval(expr Item, env *Env) (interface{}, error) {
 }
 
 type Lambda struct {
-	params []*Data
-	body   Item
+	params []Symbol
+	body   Data
 	envt   *Env
 }
 
@@ -197,17 +238,17 @@ func (l *Lambda) String() string {
 	return fmt.Sprintf("<function %p: %v>", l, l.body)
 }
 
-func evalLambda(expr ItemList, env *Env) (interface{}, error) {
+func evalLambda(expr DataList, env *Env) (Data, error) {
 	l := Lambda{}
-	params, ok := expr[1].(ItemList)
+	params, ok := expr[1].(DataList)
 	if !ok {
 		return nil, fmt.Errorf("bad params: %v", expr[1])
 	}
 	for _, x := range params {
 		switch p := x.(type) {
-		case *Data:
+		case Symbol:
 			l.params = append(l.params, p)
-		case []interface{}:
+		case DataList:
 			return nil, fmt.Errorf("combo param not supported: %v", x)
 		}
 
@@ -219,7 +260,7 @@ func evalLambda(expr ItemList, env *Env) (interface{}, error) {
 
 }
 
-func apply(proc Item, args ItemList, env *Env) (Item, error) {
+func apply(proc Data, args DataList, env *Env) (Data, error) {
 	//	log.Printf("apply: %v args: %v\n", proc, args)
 	switch f := proc.(type) {
 	case InternalFunc:
@@ -232,19 +273,19 @@ func apply(proc Item, args ItemList, env *Env) (Item, error) {
 			f.envt.Bind(p, args[i])
 		}
 		return eval(f.body, f.envt)
-	case *Data:
-		return eval(proc, env)
+		//	case *Data:
+		//		return eval(proc, env)
 	default:
 		return nil, fmt.Errorf("apply to a non function: %#v", proc)
 	}
 }
 
-func replReader(in io.Reader, env *Env) (interface{}, error) {
+func replReader(in io.Reader, env *Env) (Data, error) {
 	//	l := NewScanner(in)
 	buf := make([]byte, 1024)
 	n, _ := in.Read(buf)
 	l := NewLexer("lispy", string(buf[:n]))
-	var result interface{}
+	var result Data
 	for {
 		var err error
 		expr, err := read(l)
@@ -263,7 +304,7 @@ func replReader(in io.Reader, env *Env) (interface{}, error) {
 	}
 }
 
-func repl(in string, env *Env) (interface{}, error) {
+func repl(in string, env *Env) (Data, error) {
 	return replReader(strings.NewReader(in), env)
 }
 
@@ -271,7 +312,11 @@ func replCLI(env *Env) {
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		fmt.Print("-> ")
-		text, _ := reader.ReadString('\n')
+		text, err := reader.ReadString('\n')
+		if err != nil {
+			fmt.Println("\nbye!")
+			os.Exit(0)
+		}
 		result, err := repl(text, env)
 		if err != nil && err != ErrorEOF {
 			fmt.Println("Error:", err)
@@ -282,10 +327,10 @@ func replCLI(env *Env) {
 }
 
 func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
-	return func(a ...Item) (Item, error) {
-		v, ok := a[0].(Number)
+	return func(a ...Data) (Data, error) {
+		v, ok := Car(a).(Number)
 		if !ok {
-			return nil, fmt.Errorf("Not a number: %v", a[0])
+			return nil, fmt.Errorf("Not a number: %v", Car(a))
 		}
 		for _, n := range a[1:] {
 			i, ok := n.(Number)
@@ -298,12 +343,12 @@ func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
 	}
 }
 
-func ApplyNumericBool(f func(Number, Number) bool) InternalFunc {
-	return func(a ...Item) (Item, error) {
-		var ret bool
-		v, ok := a[0].(Number)
+func ApplyNumericBool(f func(Number, Number) Boolean) InternalFunc {
+	return func(a ...Data) (Data, error) {
+		var ret Boolean
+		v, ok := Car(a).(Number)
 		if !ok {
-			return nil, fmt.Errorf("Not a number: %v", a[0])
+			return nil, fmt.Errorf("Not a number: %v", Car(a))
 		}
 		for _, n := range a[1:] {
 			i, ok := n.(Number)
@@ -316,15 +361,15 @@ func ApplyNumericBool(f func(Number, Number) bool) InternalFunc {
 				return ret, nil
 			}
 		}
-		return Item(ret), nil
+		return Boolean(ret), nil
 	}
 }
 
-func isTrue(i Item) bool {
-	if b, ok := i.(bool); ok {
+func isTrue(i Data) Boolean {
+	if b, ok := i.(Boolean); ok {
 		return b
 	}
-	if a, ok := i.(*Data); ok {
+	if a, ok := i.(Symbol); ok {
 		if a == Nil {
 			return false
 		}
@@ -333,8 +378,7 @@ func isTrue(i Item) bool {
 	if n, ok := i.(Number); ok {
 		return !(n == 0)
 	}
-
-	if il, ok := i.(ItemList); ok {
+	if il, ok := i.(DataList); ok {
 		return len(il) > 0
 	}
 	if _, ok := i.(String); ok {
@@ -343,8 +387,8 @@ func isTrue(i Item) bool {
 	return false
 }
 
-func isItemList(i Item) bool {
-	if _, ok := i.(ItemList); ok {
+func isDataList(i Data) Boolean {
+	if _, ok := i.(DataList); ok {
 		return true
 	}
 	return false
@@ -369,64 +413,64 @@ func DefaultEnv() *Env {
 	env.BindName("+", ApplyNumeric(func(x, y Number) Number {
 		return x + y
 	}))
-	env.BindName("<", ApplyNumericBool(func(x, y Number) bool {
+	env.BindName("<", ApplyNumericBool(func(x, y Number) Boolean {
 		return x < y
 	}))
-	env.BindName("<=", ApplyNumericBool(func(x, y Number) bool {
+	env.BindName("<=", ApplyNumericBool(func(x, y Number) Boolean {
 		return x <= y
 	}))
-	env.BindName(">", ApplyNumericBool(func(x, y Number) bool {
+	env.BindName(">", ApplyNumericBool(func(x, y Number) Boolean {
 		return x > y
 	}))
-	env.BindName(">=", ApplyNumericBool(func(x, y Number) bool {
+	env.BindName(">=", ApplyNumericBool(func(x, y Number) Boolean {
 		return x >= y
 	}))
-	env.BindName("=", ApplyNumericBool(func(x, y Number) bool {
+	env.BindName("=", ApplyNumericBool(func(x, y Number) Boolean {
 		return x == y
 	}))
-	env.BindName("number?", InternalFunc(func(a ...Item) (Item, error) {
+	env.BindName("number?", InternalFunc(func(a ...Data) (Data, error) {
 		if len(a) > 1 {
 			return nil, fmt.Errorf("Too many arguments for number?: %v", a)
 		}
 		if _, ok := a[0].(Number); ok {
-			return Item(true), nil
+			return Boolean(true), nil
 		}
-		return Item(false), nil
+		return Boolean(false), nil
 	}))
-	env.BindName("car", InternalFunc(func(a ...Item) (Item, error) {
-		if !isItemList(a[0]) {
+	env.BindName("car", InternalFunc(func(a ...Data) (Data, error) {
+		if !isDataList(a[0]) {
 			return nil, fmt.Errorf("Not a list: %#v", a[0])
 		}
-		il := a[0].(ItemList)
+		il := a[0].(DataList)
 		if len(il) == 0 {
 			return Nil, nil
 		}
-		return a[0].(ItemList)[0], nil
+		return a[0].(DataList)[0], nil
 	}))
-	env.BindName("cdr", InternalFunc(func(a ...Item) (Item, error) {
-		if !isItemList(a[0]) {
+	env.BindName("cdr", InternalFunc(func(a ...Data) (Data, error) {
+		if !isDataList(a[0]) {
 			return nil, fmt.Errorf("Not a list: %#v", a[0])
 		}
-		il := a[0].(ItemList)
+		il := a[0].(DataList)
 		if len(il) < 2 {
 			return Nil, nil
 		}
 		return il[1:], nil
 	}))
-	env.BindName("cons", InternalFunc(func(a ...Item) (Item, error) {
+	env.BindName("cons", InternalFunc(func(a ...Data) (Data, error) {
 		if len(a) != 2 {
 			return nil, fmt.Errorf("wrong number of arguments given to cons")
 		}
-		l := ItemList{a[0]}
-		if il, ok := a[1].(ItemList); ok {
+		l := DataList{a[0]}
+		if il, ok := a[1].(DataList); ok {
 			l = append(l, il...)
 		} else {
 			l = append(l, a[1])
 		}
 		return l, nil
 	}))
-	env.BindName("equal?", InternalFunc(func(a ...Item) (Item, error) {
-		return reflect.DeepEqual(a[0], a[1]), nil
+	env.BindName("equal?", InternalFunc(func(a ...Data) (Data, error) {
+		return Boolean(reflect.DeepEqual(a[0], a[1])), nil
 	}))
 	env.BindName("pi", Number(math.Pi))
 	return env

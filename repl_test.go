@@ -159,7 +159,7 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(equal? 1 1)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldResemble, true)
+			So(val, ShouldEqual, true)
 		})
 		Convey("Test arithmetic", func() {
 			var a float64 = 30
@@ -223,19 +223,18 @@ func TestRepl(t *testing.T) {
 			val, err = repl(fmt.Sprintf("(= %v %v %v)", a, b, b), env)
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, a == b)
-
 			val, err = repl(fmt.Sprintf("(number? %v)", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldBeTrue)
+			So(val, ShouldEqual, true)
 			val, err = repl(fmt.Sprintf("(number? '(%v))", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldBeFalse)
+			So(val, ShouldEqual, false)
 			val, err = repl(fmt.Sprintf("(number? \"%v\")", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldBeFalse)
+			So(val, ShouldEqual, false)
 			val, err = repl(fmt.Sprintf("(number? 'atom)"), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldBeFalse)
+			So(val, ShouldEqual, false)
 		})
 		Convey("Define and use variables", func() {
 			Convey("Define r and n", func() {

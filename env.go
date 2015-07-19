@@ -2,7 +2,7 @@ package main
 
 import "fmt"
 
-type Binding map[*Data]Item
+type Binding map[Symbol]Data
 type Env struct {
 	vars  Binding
 	outer *Env
@@ -16,23 +16,19 @@ func NewEnv(outer *Env) *Env {
 
 }
 
-func (e *Env) BindName(name string, i Item) {
+func (e *Env) BindName(name string, i Data) {
 	sym := internSymbol(name)
 	e.vars[sym] = i
 }
 
-func Symbolp(sym *Data) bool {
-	return sym.Type == SymbolType
-}
-
-func (e *Env) Bind(sym *Data, i Item) {
+func (e *Env) Bind(sym Symbol, i Data) {
 	if !Symbolp(sym) {
 		panic(fmt.Errorf("sym is not a Symbol: %v", sym))
 	}
 	e.vars[sym] = i
 }
 
-func (e *Env) Var(sym *Data) (Item, error) {
+func (e *Env) Var(sym Symbol) (Data, error) {
 	if !Symbolp(sym) {
 		panic(fmt.Errorf("sym is not a Symbol: %v", sym))
 	}
@@ -43,7 +39,7 @@ func (e *Env) Var(sym *Data) (Item, error) {
 	return v, nil
 }
 
-func (env *Env) Find(sym *Data) *Env {
+func (env *Env) Find(sym Symbol) *Env {
 	if !Symbolp(sym) {
 		panic(fmt.Errorf("sym is not a Symbol: %v", sym))
 	}
@@ -56,6 +52,6 @@ func (env *Env) Find(sym *Data) *Env {
 	}
 }
 
-func (env *Env) FindVar(sym *Data) (Item, error) {
+func (env *Env) FindVar(sym Symbol) (Data, error) {
 	return env.Find(sym).Var(sym)
 }
