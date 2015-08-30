@@ -13,12 +13,12 @@ import (
 	"strings"
 )
 
-// Item is an *Data, Number,  or Function
+// Data is a fundamental type (symbol, string, number, list, etc)
 type Data interface {
 	String() string
 }
 
-// ItemList is a fundamental data type.
+// DataList is a list of Data items.
 type DataList []Data
 
 type Symbol string
@@ -40,7 +40,11 @@ func (fun InternalFunc) String() string {
 }
 
 func (b Boolean) String() string {
-	return fmt.Sprintf("%v", bool(b))
+	if b {
+		return "#t"
+	} else {
+		return "#f"
+	}
 }
 
 func (s String) String() string {
@@ -52,14 +56,10 @@ type Tokenizer interface {
 }
 
 var (
-	T   Symbol
-	Nil Symbol
+	T     = Boolean(true)
+	False = Boolean(false)
+	Nil   = DataList(nil)
 )
-
-func init() {
-	Nil = internSymbol("NIL")
-	T = internSymbol("t")
-}
 
 var ErrorEOF = errors.New("End of File")
 
@@ -120,6 +120,10 @@ func read(l Tokenizer) (Data, error) {
 		return nil, ErrorEOF
 	case STRING:
 		return StringWithValue(t.lit), nil
+	case TRUE:
+		return T, nil
+	case FALSE:
+		return False, nil
 	case ILLEGAL:
 		return nil, errors.New(t.lit)
 	}
@@ -151,13 +155,22 @@ func readList(lex Tokenizer) (Data, error) {
 	return l, nil
 }
 
+var (
+	_quote  = internSymbol("quote")
+	_define = internSymbol("define")
+	_set    = internSymbol("set!")
+	_if     = internSymbol("if")
+	_begin  = internSymbol("begin")
+	_quit   = internSymbol("quit")
+	_lambda = internSymbol("lambda")
+	_vars   = internSymbol(":vars")
+)
+
 func eval(expr Data, env *Env) (Data, error) {
 	log.Printf("%T: %v\n", expr, expr)
 	switch e := expr.(type) {
 	case Symbol:
-		{
-			return env.FindVar(e)
-		}
+		return env.FindVar(e)
 	case Number:
 		return e, nil
 	case String:
@@ -166,18 +179,18 @@ func eval(expr Data, env *Env) (Data, error) {
 		if len(e) == 0 {
 			return Nil, nil
 		}
-		switch car, _ := e[0].(Symbol); car.String() {
-		case "QUOTE":
+		switch car, _ := Car(e).(Symbol); car {
+		case _quote:
 			return Cadr(e), nil
-		case "DEFINE":
+		case _define:
 			v, err := eval(Caddr(e), env)
 			if err != nil {
 				return nil, err
 			}
 			env.Bind(e[1].(Symbol), v)
 			return env.Var(e[1].(Symbol))
-		case "SET!":
-			d := e[1].(Symbol)
+		case _set:
+			d := Cadr(e).(Symbol)
 			var err error
 			val, err := eval(Caddr(e), env)
 			if err != nil {
@@ -185,7 +198,7 @@ func eval(expr Data, env *Env) (Data, error) {
 			}
 			env.Find(d).Bind(d, val)
 			return val, nil
-		case "IF":
+		case _if:
 			test, _ := eval(Cadr(e), env)
 			if isTrue(test) {
 				return eval(Caddr(e), env)
@@ -193,18 +206,18 @@ func eval(expr Data, env *Env) (Data, error) {
 				return eval(Cadddr(e), env)
 			}
 			return Nil, nil
-		case "BEGIN":
+		case _begin:
 			var v Data
 			for _, e := range Cdr(e) {
 				v, _ = eval(e, env)
 			}
 			return v, nil
 
-		case "QUIT":
+		case _quit:
 			os.Exit(0)
-		case "LAMBDA":
+		case _lambda:
 			return evalLambda(e, env)
-		case ":VARS":
+		case _vars:
 			for k, v := range env.vars {
 				log.Printf("%v: %v\n", k, v)
 			}
@@ -216,7 +229,7 @@ func eval(expr Data, env *Env) (Data, error) {
 				return nil, fmt.Errorf("undefined-function: %v", err)
 			}
 			args := make(DataList, len(e)-1)
-			for i, a := range e[1:] {
+			for i, a := range Cdr(e) {
 				args[i], err = eval(a, env)
 				if err != nil {
 					return nil, err
@@ -240,7 +253,7 @@ func (l *Lambda) String() string {
 
 func evalLambda(expr DataList, env *Env) (Data, error) {
 	l := Lambda{}
-	params, ok := expr[1].(DataList)
+	params, ok := Cadr(expr).(DataList)
 	if !ok {
 		return nil, fmt.Errorf("bad params: %v", expr[1])
 	}
@@ -365,12 +378,21 @@ func ApplyNumericBool(f func(Number, Number) Boolean) InternalFunc {
 	}
 }
 
+func Apply2(f func(Data, Data) (Data, error)) InternalFunc {
+	return func(a ...Data) (Data, error) {
+		if len(a) != 2 {
+			return nil, fmt.Errorf("Expected 2 arguments, received %d", len(a))
+		}
+		return f(a[0], a[1])
+	}
+}
+
 func isTrue(i Data) Boolean {
 	if b, ok := i.(Boolean); ok {
 		return b
 	}
 	if a, ok := i.(Symbol); ok {
-		if a == Nil {
+		if a == internSymbol("nil") {
 			return false
 		}
 		return true
@@ -399,6 +421,8 @@ func EmptyEnv() *Env {
 
 func DefaultEnv() *Env {
 	env := EmptyEnv()
+	//	env.Bind(internSymbol("#t"), T)
+	env.Bind(internSymbol("nil"), Nil)
 	env.BindName("*", ApplyNumeric(func(x, y Number) Number {
 		return x * y
 	}))
@@ -438,30 +462,31 @@ func DefaultEnv() *Env {
 		return Boolean(false), nil
 	}))
 	env.BindName("car", InternalFunc(func(a ...Data) (Data, error) {
-		if !isDataList(a[0]) {
-			return nil, fmt.Errorf("Not a list: %#v", a[0])
+		if il, ok := a[0].(DataList); ok {
+			if len(il) < 1 {
+				return Nil, nil
+			}
+			return Car(il), nil
 		}
-		il := a[0].(DataList)
-		if len(il) == 0 {
-			return Nil, nil
-		}
-		return a[0].(DataList)[0], nil
+		return nil, fmt.Errorf("Not a list: %#v", a[0])
 	}))
 	env.BindName("cdr", InternalFunc(func(a ...Data) (Data, error) {
-		if !isDataList(a[0]) {
-			return nil, fmt.Errorf("Not a list: %#v", a[0])
+		if il, ok := a[0].(DataList); ok {
+			if len(il) < 2 {
+				return Nil, nil
+			}
+			return Cdr(il), nil
 		}
-		il := a[0].(DataList)
-		if len(il) < 2 {
-			return Nil, nil
-		}
-		return il[1:], nil
+		return nil, fmt.Errorf("Not a list: %#v", a[0])
 	}))
 	env.BindName("cons", InternalFunc(func(a ...Data) (Data, error) {
 		if len(a) != 2 {
 			return nil, fmt.Errorf("wrong number of arguments given to cons")
 		}
 		l := DataList{a[0]}
+		if a[1] == nil {
+			return l, nil
+		}
 		if il, ok := a[1].(DataList); ok {
 			l = append(l, il...)
 		} else {
@@ -474,9 +499,4 @@ func DefaultEnv() *Env {
 	}))
 	env.BindName("pi", Number(math.Pi))
 	return env
-}
-
-func main() {
-	log.SetFlags(log.LstdFlags | log.Lshortfile)
-	replCLI(DefaultEnv())
 }

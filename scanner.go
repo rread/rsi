@@ -20,6 +20,8 @@ const (
 	QUOTE
 	DQUOTE
 	STRING
+	TRUE
+	FALSE
 )
 
 const eof = rune(0)
@@ -46,6 +48,10 @@ func (t Token) String() string {
 		return "DQUOTE"
 	case STRING:
 		return "STRING"
+	case TRUE:
+		return "TRUE"
+	case FALSE:
+		return "FALSE"
 	}
 	return "Unknown token: " + fmt.Sprintf("%d", t)
 }
@@ -66,7 +72,7 @@ func isNumber(ch rune) bool {
 	return unicode.IsNumber(ch) || ch == '.'
 }
 
-func isAtom(ch rune) bool {
+func isSymbol(ch rune) bool {
 	return isLetter(ch) || isNumber(ch) || ch == '_'
 }
 
@@ -200,19 +206,22 @@ func lexBase(l *Lexer) stateFn {
 			l.emit(QUOTE)
 			return lexBase
 		case ch == '-' || ch == '+':
-			return atomOrNumber
+			return symbolOrNumber
 		case ch == '"':
 			l.ignore()
 			return lexString
+		case ch == '#':
+			l.ignore()
+			return lexHash
 		case isNumber(ch):
 			return lexNumber
-		case isAtom(ch):
-			return lexAtom
+		case isSymbol(ch):
+			return lexSymbol
 		}
 	}
 }
 
-func atomOrNumber(l *Lexer) stateFn {
+func symbolOrNumber(l *Lexer) stateFn {
 	ch := l.peek()
 	if ch == eof {
 		l.emit(SYMBOL)
@@ -221,7 +230,7 @@ func atomOrNumber(l *Lexer) stateFn {
 	if isNumber(ch) {
 		return lexNumber
 	}
-	return lexAtom
+	return lexSymbol
 }
 
 func lexNumber(l *Lexer) stateFn {
@@ -230,8 +239,20 @@ func lexNumber(l *Lexer) stateFn {
 	return lexBase
 }
 
-func lexAtom(l *Lexer) stateFn {
-	l.acceptRunFn(isAtom)
+func lexHash(l *Lexer) stateFn {
+	switch ch := l.next(); {
+	case ch == 't':
+		l.emit(TRUE)
+	case ch == 'f':
+		l.emit(FALSE)
+	default:
+		return l.errorf("unsupported hash code #%v", l.input[l.start:l.pos])
+	}
+	return lexBase
+}
+
+func lexSymbol(l *Lexer) stateFn {
+	l.acceptRunFn(isSymbol)
 	l.emit(SYMBOL)
 	return lexBase
 }

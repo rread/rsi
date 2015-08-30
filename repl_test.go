@@ -82,10 +82,21 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldEqual, -123)
 		})
 
+		Convey("Test boolean literals", func() {
+			val, err := repl("'#t", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, T)
+			So(S(val), ShouldEqual, "#t")
+
+			val, err = repl("'#f", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, False)
+			So(S(val), ShouldEqual, "#f")
+		})
 		Convey("If statements", func() {
 			val, err := repl("(if (<= 4 2) (* 10 2))", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, "NIL")
+			So(S(val), ShouldEqual, "()")
 
 			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)
@@ -159,7 +170,7 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(equal? 1 1)", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, true)
+			So(val, ShouldEqual, T)
 		})
 		Convey("Test arithmetic", func() {
 			var a float64 = 30
@@ -225,16 +236,16 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldEqual, a == b)
 			val, err = repl(fmt.Sprintf("(number? %v)", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, true)
+			So(val, ShouldEqual, T)
 			val, err = repl(fmt.Sprintf("(number? '(%v))", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, false)
+			So(val, ShouldEqual, False)
 			val, err = repl(fmt.Sprintf("(number? \"%v\")", a), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, false)
+			So(val, ShouldEqual, False)
 			val, err = repl(fmt.Sprintf("(number? 'atom)"), env)
 			So(err, ShouldBeNil)
-			So(val, ShouldEqual, false)
+			So(val, ShouldEqual, False)
 		})
 		Convey("Define and use variables", func() {
 			Convey("Define r and n", func() {
@@ -286,7 +297,7 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(cdr (cdr (cdr (cons 1 '(2 3)))))", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, "NIL")
+			So(val, ShouldResemble, Nil)
 
 		})
 	})
