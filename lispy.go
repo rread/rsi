@@ -167,7 +167,7 @@ var (
 )
 
 func eval(expr Data, env *Env) (Data, error) {
-	log.Printf("%T: %v\n", expr, expr)
+	log.Printf("eval: %T: %v\n", expr, expr)
 	switch e := expr.(type) {
 	case Symbol:
 		return env.FindVar(e)
@@ -422,7 +422,6 @@ func EmptyEnv() *Env {
 func DefaultEnv() *Env {
 	env := EmptyEnv()
 	//	env.Bind(internSymbol("#t"), T)
-	env.Bind(internSymbol("nil"), Nil)
 	env.BindName("*", ApplyNumeric(func(x, y Number) Number {
 		return x * y
 	}))
@@ -497,6 +496,98 @@ func DefaultEnv() *Env {
 	env.BindName("equal?", InternalFunc(func(a ...Data) (Data, error) {
 		return Boolean(reflect.DeepEqual(a[0], a[1])), nil
 	}))
+	env.BindName("null?", InternalFunc(func(a ...Data) (Data, error) {
+		if len(a) != 1 {
+			return nil, fmt.Errorf("wrong number of arguments passed")
+		}
+		if a[0] == nil {
+			return T, nil
+		}
+
+		if l, ok := a[0].(DataList); ok {
+			if len(l) == 0 {
+				return T, nil
+			}
+		}
+		return False, nil
+	}))
 	env.BindName("pi", Number(math.Pi))
+	env.BindName("mcons", Apply2(cons))
+	env.BindName("mcar", Primitive(car))
+	env.BindName("mcdr", Primitive(cdr))
+	env.Bind(internSymbol("nil"), nil)
 	return env
+}
+
+func Primitive(f func(Data) Data) InternalFunc {
+	return func(a ...Data) (Data, error) {
+		return f(a[0]), nil
+	}
+}
+
+type Pair struct {
+	car Data
+	cdr Data
+}
+
+func cons(car, cdr Data) (Data, error) {
+	return &Pair{car, cdr}, nil
+}
+
+func PairP(d Data) bool {
+	_, ok := d.(*Pair)
+	if !ok {
+		log.Printf("consp %T %v %v", d, d, ok)
+	}
+	return ok
+}
+
+func car(l Data) Data {
+	if isNil(l) {
+		return Nil
+	}
+	if PairP(l) {
+		return l.(*Pair).car
+	}
+	log.Fatalf("Not a list: %T", l)
+	return Nil
+}
+
+func isNil(l Data) bool {
+	//	log.Printf("isNil %T %v", l, l == nil)
+	return l == nil
+}
+
+func cdr(l Data) Data {
+	if isNil(l) {
+		return Nil
+	}
+	if PairP(l) {
+		return l.(*Pair).cdr
+	}
+	log.Fatalf("Not a list: %T", l)
+	return Nil
+}
+
+func (p *Pair) String() string {
+	ret := "("
+	//	var d Data = p
+	//	log.Printf("Pair.String:  %T %v %v\n", d, car(d), cdr(d))
+	for {
+		ret += fmt.Sprintf("%v", p.car)
+		if isNil(p.cdr) {
+			break
+		}
+		if PairP(p.cdr) {
+			ret += " "
+			p = p.cdr.(*Pair)
+			continue
+		} else {
+			ret += " . " + fmt.Sprintf("%v", p.cdr)
+			break
+		}
+		break
+	}
+	ret = ret + ")"
+	return ret
 }
