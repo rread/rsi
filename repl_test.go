@@ -24,7 +24,7 @@ func TestRepl(t *testing.T) {
 		So(err, ShouldBeNil)
 		So(val, ShouldBeNil)
 
-		val, err = repl("()", env)
+		val, err = repl("  ()   ", env)
 		So(err, ShouldBeNil)
 		So(val, ShouldEqual, Nil)
 
@@ -82,6 +82,38 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldEqual, -123)
 		})
 
+		Convey("Test predicates", func() {
+			Convey("null?", func() {
+				val, err := repl("(null? '())", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, T)
+
+				val, err = repl("(null? 123)", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, False)
+			})
+			Convey("equal?", func() {
+				val, err := repl("(equal? 1 1)", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, T)
+
+				val, err = repl("(equal? 1 30)", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, False)
+
+			})
+			Convey("pair?", func() {
+				val, err := repl("(pair? '(a b))", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, T)
+
+				val, err = repl("(pair? 30)", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, False)
+
+			})
+		})
+
 		Convey("Test boolean literals", func() {
 			val, err := repl("'#t", env)
 			So(err, ShouldBeNil)
@@ -96,7 +128,7 @@ func TestRepl(t *testing.T) {
 		Convey("If statements", func() {
 			val, err := repl("(if (<= 4 2) (* 10 2))", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, "()")
+			So(S(val), ShouldEqual, "<nil>")
 
 			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)
@@ -106,7 +138,7 @@ func TestRepl(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, 20)
 
-			val, err = repl("(if '(1 2 ) (* 10 2) (+ 1 2))", env)
+			val, err = repl("(if '(1 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, 20)
 
@@ -144,7 +176,7 @@ func TestRepl(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, 2)
 
-			_, err = repl("(define  foo (begin (define count 0) (lambda () (set! count (+ count 1)))))", env)
+			_, err = repl("(define foo ((lambda (x) (lambda () (set! x (+ x 1)) x)) 0))", env)
 			So(err, ShouldBeNil)
 
 			val, err = repl("(foo) (foo)", env)
@@ -168,9 +200,13 @@ func TestRepl(t *testing.T) {
 			val, err = repl("(not-func 10)", env)
 			So(err.Error(), ShouldContainSubstring, "undefined-function: Undefined symbol: NOT-FUNC")
 
-			val, err = repl("(equal? 1 1)", env)
-			So(err, ShouldBeNil)
-			So(val, ShouldEqual, T)
+			Convey("begin", func() {
+				val, err = repl("(begin (+ 2 3) (* 5 8))", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, 40)
+
+			})
+
 		})
 		Convey("Test arithmetic", func() {
 			var a float64 = 30
@@ -216,6 +252,9 @@ func TestRepl(t *testing.T) {
 			val, err = repl(fmt.Sprintf("(< %v %v)", b, a), env)
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, b < a)
+			val, err = repl(fmt.Sprintf("(<= %v %v)", a, a), env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, a <= a)
 			val, err = repl(fmt.Sprintf("(<= %v %v %v)", a, b, b), env)
 			So(err, ShouldBeNil)
 			So(val, ShouldEqual, a <= b)
@@ -277,7 +316,7 @@ func TestRepl(t *testing.T) {
 		Convey("Test cons", func() {
 			val, err := repl("(cons 1 2)", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, "(1 2)")
+			So(S(val), ShouldEqual, "(1 . 2)")
 
 			val, err = repl("(cons 1 '(2 3))", env)
 			So(err, ShouldBeNil)

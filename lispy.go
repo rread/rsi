@@ -25,7 +25,7 @@ type Symbol string
 type Boolean bool
 type Number float64
 type String string
-type InternalFunc func(...Data) (Data, error)
+type InternalFunc func(*Pair) (Data, error)
 
 func (sym Symbol) String() string {
 	return string(sym)
@@ -36,7 +36,7 @@ func (num Number) String() string {
 }
 
 func (fun InternalFunc) String() string {
-	return fmt.Sprintf("native-func '%v'", ((func(...Data) (Data, error))(fun)))
+	return fmt.Sprintf("native-func '%v'", ((func(*Pair) (Data, error))(fun)))
 }
 
 func (b Boolean) String() string {
@@ -58,42 +58,10 @@ type Tokenizer interface {
 var (
 	T     = Boolean(true)
 	False = Boolean(false)
-	Nil   = DataList(nil)
+	Nil   = (*Pair)(nil)
 )
 
 var ErrorEOF = errors.New("End of File")
-
-func (items DataList) String() string {
-	s := "("
-	for n, i := range items {
-		if n > 0 {
-			s += " "
-		}
-		s += fmt.Sprintf("%v", i)
-	}
-	s += ")"
-	return s
-}
-
-func Car(items DataList) Data {
-	return items[0]
-}
-
-func Cdr(items DataList) DataList {
-	return items[1:]
-}
-
-func Cadr(items DataList) Data {
-	return items[1]
-}
-
-func Caddr(items DataList) Data {
-	return items[2]
-}
-
-func Cadddr(items DataList) Data {
-	return items[3]
-}
 
 func read(l Tokenizer) (Data, error) {
 	t := l.NextItem()
@@ -131,12 +99,11 @@ func read(l Tokenizer) (Data, error) {
 }
 
 func readQuote(lex Tokenizer) (Data, error) {
-	l := DataList{internSymbol("quote")}
 	c, err := read(lex)
 	if err != nil {
 		return nil, fmt.Errorf("Failed to complete list: %v\n", err)
 	}
-	return append(l, c), nil
+	return cons(internSymbol("quote"), cons(c, Nil)), nil
 }
 
 func readList(lex Tokenizer) (Data, error) {
@@ -152,7 +119,19 @@ func readList(lex Tokenizer) (Data, error) {
 		l = append(l, c)
 
 	}
-	return l, nil
+
+	return list2cons(l), nil
+}
+
+func list2cons(l DataList) *Pair {
+	var p Data = Nil
+	for i := len(l) - 1; i >= 0; i-- {
+		p = cons(l[i], p)
+	}
+	if p != Nil {
+		return p.(*Pair)
+	}
+	return Nil
 }
 
 var (
@@ -175,48 +154,56 @@ func eval(expr Data, env *Env) (Data, error) {
 		return e, nil
 	case String:
 		return e, nil
-	case DataList:
-		if len(e) == 0 {
+	case *Pair:
+		if e == nil {
 			return Nil, nil
 		}
-		switch car, _ := Car(e).(Symbol); car {
+		switch c, _ := car(e).(Symbol); c {
 		case _quote:
-			return Cadr(e), nil
+			return cadr(e), nil
 		case _define:
-			v, err := eval(Caddr(e), env)
+			v, err := eval(caddr(e), env)
 			if err != nil {
 				return nil, err
 			}
-			env.Bind(e[1].(Symbol), v)
-			return env.Var(e[1].(Symbol))
+			env.Bind(cadr(e).(Symbol), v)
+			return env.Var(cadr(e).(Symbol))
 		case _set:
-			d := Cadr(e).(Symbol)
+			d := cadr(e).(Symbol)
 			var err error
-			val, err := eval(Caddr(e), env)
+			val, err := eval(caddr(e), env)
 			if err != nil {
 				return nil, err
 			}
 			env.Find(d).Bind(d, val)
-			return val, nil
+			return nil, nil
 		case _if:
-			test, _ := eval(Cadr(e), env)
+			test, _ := eval(cadr(e), env)
 			if isTrue(test) {
-				return eval(Caddr(e), env)
-			} else if len(e) > 3 {
-				return eval(Cadddr(e), env)
+				return eval(caddr(e), env)
+			} else if listLen(e) > 3 {
+				return eval(cadddr(e), env)
 			}
 			return Nil, nil
 		case _begin:
 			var v Data
-			for _, e := range Cdr(e) {
-				v, _ = eval(e, env)
+			var err error
+			e = cdr(e).(*Pair)
+			for e != nil {
+				log.Printf("begin: %v", e)
+				v, err = eval(car(e), env)
+				if err != nil {
+					return nil, err
+				}
+				e = cdr(e).(*Pair)
+
 			}
 			return v, nil
 
 		case _quit:
 			os.Exit(0)
 		case _lambda:
-			return evalLambda(e, env)
+			return evalLambda(cdr(e).(*Pair), env)
 		case _vars:
 			for k, v := range env.vars {
 				log.Printf("%v: %v\n", k, v)
@@ -224,18 +211,27 @@ func eval(expr Data, env *Env) (Data, error) {
 			return nil, nil
 
 		default:
-			proc, err := eval(Car(e), env)
+			log.Printf("default %v", e)
+			proc, err := eval(car(e), env)
 			if err != nil {
 				return nil, fmt.Errorf("undefined-function: %v", err)
 			}
-			args := make(DataList, len(e)-1)
-			for i, a := range Cdr(e) {
-				args[i], err = eval(a, env)
+			args := make(DataList, listLen(e)-1)
+			var next Data
+			var i int
+			for next = cdr(e); next != Nil; next = cdr(e) {
+				var ok bool
+				if e, ok = next.(*Pair); !ok {
+					return nil, fmt.Errorf("yikes, not a list")
+				}
+				args[i], err = eval(car(e), env)
 				if err != nil {
 					return nil, err
 				}
+				i++
 			}
-			return apply(proc, args, env)
+			v := list2cons(args)
+			return apply(proc, v, env)
 		}
 	}
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
@@ -243,7 +239,7 @@ func eval(expr Data, env *Env) (Data, error) {
 
 type Lambda struct {
 	params []Symbol
-	body   Data
+	body   []Data
 	envt   *Env
 }
 
@@ -251,45 +247,69 @@ func (l *Lambda) String() string {
 	return fmt.Sprintf("<function %p: %v>", l, l.body)
 }
 
-func evalLambda(expr DataList, env *Env) (Data, error) {
+func evalLambda(expr *Pair, env *Env) (Data, error) {
 	l := Lambda{}
-	params, ok := Cadr(expr).(DataList)
+	params, ok := car(expr).(*Pair)
 	if !ok {
-		return nil, fmt.Errorf("bad params: %v", expr[1])
+		return nil, fmt.Errorf("bad params: %v", cdr(expr))
 	}
-	for _, x := range params {
-		switch p := x.(type) {
+	for params != nil {
+		switch p := car(params).(type) {
 		case Symbol:
 			l.params = append(l.params, p)
-		case DataList:
-			return nil, fmt.Errorf("combo param not supported: %v", x)
+		case *Pair:
+			return nil, fmt.Errorf("combo param not supported: %v", p)
+		}
+		d := cdr(params)
+		if d == nil {
+			break
+		}
+		if params, ok = d.(*Pair); !ok {
+			return nil, fmt.Errorf("not a pair here %v", d)
 		}
 
 	}
-	//	log.Printf("lambda %#v\n", expr[2])
-	l.body = expr[2]
+	expr, _ = listNext(expr)
+	for {
+		if expr == nil {
+			break
+		}
+		l.body = append(l.body, car(expr))
+		expr, _ = listNext(expr)
+	}
 	l.envt = NewEnv(env)
 	return &l, nil
 
 }
 
-func apply(proc Data, args DataList, env *Env) (Data, error) {
+func apply(proc Data, args *Pair, env *Env) (Data, error) {
 	//	log.Printf("apply: %v args: %v\n", proc, args)
 	switch f := proc.(type) {
 	case InternalFunc:
-		return f(args...)
+		return f(args)
 	case *Lambda:
-		if len(f.params) != len(args) {
+		if len(f.params) != listLen(args) {
 			return nil, fmt.Errorf("parameter mismatch %v != %v", f.params, args)
 		}
-		for i, p := range f.params {
-			f.envt.Bind(p, args[i])
+		for _, p := range f.params {
+			var err error
+			f.envt.Bind(p, car(args))
+			args, err = listNext(args)
+			if err != nil {
+				return nil, err
+			}
 		}
-		return eval(f.body, f.envt)
-		//	case *Data:
-		//		return eval(proc, env)
+		var result Data
+		var err error
+		for _, expr := range f.body {
+			result, err = eval(expr, f.envt)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return result, nil
 	default:
-		return nil, fmt.Errorf("apply to a non function: %#v", proc)
+		return nil, fmt.Errorf("apply to a non function: %#v %v", proc, args)
 	}
 }
 
@@ -339,16 +359,36 @@ func replCLI(env *Env) {
 	}
 }
 
-func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
-	return func(a ...Data) (Data, error) {
-		v, ok := Car(a).(Number)
-		if !ok {
-			return nil, fmt.Errorf("Not a number: %v", Car(a))
+func Map(proc Data, l *Pair, env *Env) (Data, error) {
+	for i := car(l); l != nil; {
+		var err error
+		apply(proc, cons(i, nil), env)
+		l, err = listNext(l)
+		if err != nil {
+			return nil, err
 		}
-		for _, n := range a[1:] {
-			i, ok := n.(Number)
+	}
+	return nil, nil
+}
+
+func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
+	return func(a *Pair) (Data, error) {
+		v, ok := car(a).(Number)
+		if !ok {
+			return nil, fmt.Errorf("Not a number: %v", car(a))
+		}
+		for {
+			var err error
+			a, err = listNext(a)
+			if err != nil {
+				return nil, err
+			}
+			if a == nil {
+				break
+			}
+			i, ok := car(a).(Number)
 			if !ok {
-				return nil, fmt.Errorf("Not a number: %v", n)
+				return nil, fmt.Errorf("Not a number: %v", car(a))
 			}
 			v = f(v, i)
 		}
@@ -357,33 +397,50 @@ func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
 }
 
 func ApplyNumericBool(f func(Number, Number) Boolean) InternalFunc {
-	return func(a ...Data) (Data, error) {
+	return func(a *Pair) (Data, error) {
 		var ret Boolean
-		v, ok := Car(a).(Number)
+		v, ok := car(a).(Number)
 		if !ok {
-			return nil, fmt.Errorf("Not a number: %v", Car(a))
+			return nil, fmt.Errorf("Not a number: %v", car(a))
 		}
-		for _, n := range a[1:] {
-			i, ok := n.(Number)
+		for {
+			var err error
+			a, err = listNext(a)
+			if err != nil {
+				return nil, err
+			}
+			if a == nil {
+				break
+			}
+			i, ok := car(a).(Number)
 			if !ok {
-				return nil, fmt.Errorf("Not a number: %v", n)
+				return nil, fmt.Errorf("Not a number: %v", car(a))
 			}
 			ret = f(v, i)
-			v = i
 			if !ret {
-				return ret, nil
+				return Boolean(ret), nil
 			}
+			v = i
 		}
 		return Boolean(ret), nil
 	}
 }
 
-func Apply2(f func(Data, Data) (Data, error)) InternalFunc {
-	return func(a ...Data) (Data, error) {
-		if len(a) != 2 {
-			return nil, fmt.Errorf("Expected 2 arguments, received %d", len(a))
+func Apply1(f func(Data) (Data, error)) InternalFunc {
+	return func(args *Pair) (Data, error) {
+		if listLen(args) != 1 {
+			return nil, fmt.Errorf("Expected 1 arguments, received %d", listLen(args))
 		}
-		return f(a[0], a[1])
+		return f(car(args))
+	}
+}
+
+func Apply2(f func(Data, Data) (Data, error)) InternalFunc {
+	return func(args *Pair) (Data, error) {
+		if listLen(args) != 2 {
+			return nil, fmt.Errorf("Expected 2 arguments, received %d", listLen(args))
+		}
+		return f(car(args), cadr(args))
 	}
 }
 
@@ -400,8 +457,9 @@ func isTrue(i Data) Boolean {
 	if n, ok := i.(Number); ok {
 		return !(n == 0)
 	}
-	if il, ok := i.(DataList); ok {
-		return len(il) > 0
+	if il, ok := i.(*Pair); ok {
+		/* FIXME: empty list if false, like Lisp */
+		return listLen(il) > 0
 	}
 	if _, ok := i.(String); ok {
 		return true
@@ -409,12 +467,6 @@ func isTrue(i Data) Boolean {
 	return false
 }
 
-func isDataList(i Data) Boolean {
-	if _, ok := i.(DataList); ok {
-		return true
-	}
-	return false
-}
 func EmptyEnv() *Env {
 	return NewEnv(nil)
 }
@@ -451,143 +503,56 @@ func DefaultEnv() *Env {
 	env.BindName("=", ApplyNumericBool(func(x, y Number) Boolean {
 		return x == y
 	}))
-	env.BindName("number?", InternalFunc(func(a ...Data) (Data, error) {
-		if len(a) > 1 {
+	env.BindName("number?", InternalFunc(func(a *Pair) (Data, error) {
+		if listLen(a) > 1 {
 			return nil, fmt.Errorf("Too many arguments for number?: %v", a)
 		}
-		if _, ok := a[0].(Number); ok {
-			return Boolean(true), nil
-		}
-		return Boolean(false), nil
-	}))
-	env.BindName("car", InternalFunc(func(a ...Data) (Data, error) {
-		if il, ok := a[0].(DataList); ok {
-			if len(il) < 1 {
-				return Nil, nil
-			}
-			return Car(il), nil
-		}
-		return nil, fmt.Errorf("Not a list: %#v", a[0])
-	}))
-	env.BindName("cdr", InternalFunc(func(a ...Data) (Data, error) {
-		if il, ok := a[0].(DataList); ok {
-			if len(il) < 2 {
-				return Nil, nil
-			}
-			return Cdr(il), nil
-		}
-		return nil, fmt.Errorf("Not a list: %#v", a[0])
-	}))
-	env.BindName("cons", InternalFunc(func(a ...Data) (Data, error) {
-		if len(a) != 2 {
-			return nil, fmt.Errorf("wrong number of arguments given to cons")
-		}
-		l := DataList{a[0]}
-		if a[1] == nil {
-			return l, nil
-		}
-		if il, ok := a[1].(DataList); ok {
-			l = append(l, il...)
-		} else {
-			l = append(l, a[1])
-		}
-		return l, nil
-	}))
-	env.BindName("equal?", InternalFunc(func(a ...Data) (Data, error) {
-		return Boolean(reflect.DeepEqual(a[0], a[1])), nil
-	}))
-	env.BindName("null?", InternalFunc(func(a ...Data) (Data, error) {
-		if len(a) != 1 {
-			return nil, fmt.Errorf("wrong number of arguments passed")
-		}
-		if a[0] == nil {
+		if _, ok := car(a).(Number); ok {
 			return T, nil
-		}
-
-		if l, ok := a[0].(DataList); ok {
-			if len(l) == 0 {
-				return T, nil
-			}
 		}
 		return False, nil
 	}))
+	env.BindName("equal?", InternalFunc(func(args *Pair) (Data, error) {
+		if listLen(args) != 2 {
+			return nil, fmt.Errorf("wrong number of arguments given to equal?")
+		}
+		return Boolean(reflect.DeepEqual(car(args), cadr(args))), nil
+	}))
 	env.BindName("pi", Number(math.Pi))
-	env.BindName("mcons", Apply2(cons))
-	env.BindName("mcar", Primitive(car))
-	env.BindName("mcdr", Primitive(cdr))
+	env.BindName("cons", Apply2(_cons))
+	env.BindName("car", Apply1(_car))
+	env.BindName("cdr", Apply1(_cdr))
+	env.BindName("null?", Apply1(_nullp))
+	env.BindName("pair?", Apply1(_pairp))
 	env.Bind(internSymbol("nil"), nil)
 	return env
 }
 
-func Primitive(f func(Data) Data) InternalFunc {
-	return func(a ...Data) (Data, error) {
-		return f(a[0]), nil
-	}
+func _cons(a Data, b Data) (Data, error) {
+	return cons(a, b), nil
 }
 
-type Pair struct {
-	car Data
-	cdr Data
+func _car(a Data) (Data, error) {
+	if p, ok := a.(*Pair); ok {
+		return car(p), nil
+	}
+	return Nil, fmt.Errorf("not a Pair passed to car: %v", a)
 }
 
-func cons(car, cdr Data) (Data, error) {
-	return &Pair{car, cdr}, nil
+func _cdr(a Data) (Data, error) {
+	if p, ok := a.(*Pair); ok {
+		return cdr(p), nil
+	}
+	return Nil, fmt.Errorf("not a Pair passed to cdr: %v", a)
 }
 
-func PairP(d Data) bool {
-	_, ok := d.(*Pair)
-	if !ok {
-		log.Printf("consp %T %v %v", d, d, ok)
+func _nullp(a Data) (Data, error) {
+	if p, ok := a.(*Pair); ok {
+		return nullp(p), nil
 	}
-	return ok
+	return False, nil
 }
 
-func car(l Data) Data {
-	if isNil(l) {
-		return Nil
-	}
-	if PairP(l) {
-		return l.(*Pair).car
-	}
-	log.Fatalf("Not a list: %T", l)
-	return Nil
-}
-
-func isNil(l Data) bool {
-	//	log.Printf("isNil %T %v", l, l == nil)
-	return l == nil
-}
-
-func cdr(l Data) Data {
-	if isNil(l) {
-		return Nil
-	}
-	if PairP(l) {
-		return l.(*Pair).cdr
-	}
-	log.Fatalf("Not a list: %T", l)
-	return Nil
-}
-
-func (p *Pair) String() string {
-	ret := "("
-	//	var d Data = p
-	//	log.Printf("Pair.String:  %T %v %v\n", d, car(d), cdr(d))
-	for {
-		ret += fmt.Sprintf("%v", p.car)
-		if isNil(p.cdr) {
-			break
-		}
-		if PairP(p.cdr) {
-			ret += " "
-			p = p.cdr.(*Pair)
-			continue
-		} else {
-			ret += " . " + fmt.Sprintf("%v", p.cdr)
-			break
-		}
-		break
-	}
-	ret = ret + ")"
-	return ret
+func _pairp(a Data) (Data, error) {
+	return pairp(a), nil
 }

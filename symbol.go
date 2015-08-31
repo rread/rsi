@@ -26,11 +26,6 @@ func Symbolp(i Data) bool {
 	return ok
 }
 
-func Stringp(i Data) bool {
-	_, ok := i.(String)
-	return ok
-}
-
 var internedSymbols = make(map[string]Symbol, 1024)
 
 func internSymbol(name string) Symbol {
