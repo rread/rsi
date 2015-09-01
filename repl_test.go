@@ -337,6 +337,15 @@ func TestRepl(t *testing.T) {
 			val, err = repl("(cdr (cdr (cdr (cons 1 '(2 3)))))", env)
 			So(err, ShouldBeNil)
 			So(val, ShouldResemble, Nil)
+		})
+
+		Convey("factorial 10", func() {
+			val, err := repl("(define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))", env)
+			So(err, ShouldBeNil)
+
+			val, err = repl("(fact 10)", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, 3.6288e+06)
 
 		})
 	})

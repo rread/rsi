@@ -5,15 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"math"
 	"os"
 	"reflect"
 	"strconv"
 	"strings"
+
+	"github.com/rread/unlisp/log"
 )
 
-// Data is a fundamental type (symbol, string, number, list, etc)
+// Data is a fundamental type (symbol, boolean, string, number, pair, func)
 type Data interface {
 	String() string
 }

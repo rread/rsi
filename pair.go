@@ -1,7 +1,10 @@
 package main
 
-import "log"
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/rread/unlisp/log"
+)
 
 type Pair struct {
 	car Data
