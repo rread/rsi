@@ -32,6 +32,16 @@ func (p *Pair) String() string {
 	return ret
 }
 
+func getPair(d Data) (*Pair, error) {
+	if d == Nil {
+		return Nil, nil
+	}
+	if p, ok := d.(*Pair); ok {
+		return p, nil
+	}
+	return Nil, fmt.Errorf("%v: data is not a pair", d)
+}
+
 func cons(car, cdr Data) *Pair {
 	return &Pair{car, cdr}
 }
@@ -101,13 +111,7 @@ func pairp(d Data) Boolean {
 
 func listNext(l *Pair) (*Pair, error) {
 	d := cdr(l)
-	if d == Nil {
-		return Nil, nil
-	}
-	if p, ok := d.(*Pair); ok {
-		return p, nil
-	}
-	return Nil, fmt.Errorf("Not a list")
+	return getPair(d)
 }
 
 func listLen(p *Pair) int {

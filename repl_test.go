@@ -198,7 +198,7 @@ func TestRepl(t *testing.T) {
 			So(err.Error(), ShouldContainSubstring, "parameter mismatch")
 
 			val, err = repl("(not-func 10)", env)
-			So(err.Error(), ShouldContainSubstring, "undefined-function: Undefined symbol: NOT-FUNC")
+			So(err.Error(), ShouldContainSubstring, "Undefined symbol: NOT-FUNC")
 
 			Convey("begin", func() {
 				val, err = repl("(begin (+ 2 3) (* 5 8))", env)

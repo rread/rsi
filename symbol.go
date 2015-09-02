@@ -1,6 +1,9 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"strings"
+)
 
 type DataType int
 
@@ -12,6 +15,13 @@ const (
 	FuncType
 	NativeType
 )
+
+func getSymbol(d Data) (Symbol, error) {
+	if p, ok := d.(Symbol); ok {
+		return p, nil
+	}
+	return "", fmt.Errorf("value is not a symbol: %v", d)
+}
 
 func StringWithValue(v string) String {
 	return String(v)

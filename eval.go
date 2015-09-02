@@ -19,9 +19,6 @@ type Data interface {
 	String() string
 }
 
-// DataList is a list of Data items.
-type DataList []Data
-
 type Symbol string
 type Boolean bool
 type Number float64
@@ -108,7 +105,7 @@ func readQuote(lex Tokenizer) (Data, error) {
 }
 
 func readList(lex Tokenizer) (Data, error) {
-	var l DataList
+	var l []Data
 	for {
 		c, err := read(lex)
 		if err != nil {
@@ -118,21 +115,16 @@ func readList(lex Tokenizer) (Data, error) {
 			break
 		}
 		l = append(l, c)
-
 	}
-
 	return list2cons(l), nil
 }
 
-func list2cons(l DataList) *Pair {
-	var p Data = Nil
+func list2cons(l []Data) *Pair {
+	p := Nil
 	for i := len(l) - 1; i >= 0; i-- {
 		p = cons(l[i], p)
 	}
-	if p != Nil {
-		return p.(*Pair)
-	}
-	return Nil
+	return p
 }
 
 var (
@@ -159,7 +151,9 @@ func eval(expr Data, env *Env) (Data, error) {
 		if e == nil {
 			return Nil, nil
 		}
-		switch c, _ := car(e).(Symbol); c {
+		c, _ := getSymbol(car(e))
+		/* non-Symbols fall through to default */
+		switch c {
 		case _quote:
 			return cadr(e), nil
 		case _define:
@@ -171,7 +165,6 @@ func eval(expr Data, env *Env) (Data, error) {
 			return env.Var(cadr(e).(Symbol))
 		case _set:
 			d := cadr(e).(Symbol)
-			var err error
 			val, err := eval(caddr(e), env)
 			if err != nil {
 				return nil, err
@@ -188,15 +181,20 @@ func eval(expr Data, env *Env) (Data, error) {
 			return Nil, nil
 		case _begin:
 			var v Data
-			var err error
-			e = cdr(e).(*Pair)
-			for e != nil {
+			e, err := getPair(cdr(e))
+			if err != nil {
+				return nil, err
+			}
+			for e != Nil {
 				log.Printf("begin: %v", e)
 				v, err = eval(car(e), env)
 				if err != nil {
 					return nil, err
 				}
-				e = cdr(e).(*Pair)
+				e, err = listNext(e)
+				if err != nil {
+					return nil, err
+				}
 
 			}
 			return v, nil
@@ -204,36 +202,31 @@ func eval(expr Data, env *Env) (Data, error) {
 		case _quit:
 			os.Exit(0)
 		case _lambda:
-			return evalLambda(cdr(e).(*Pair), env)
+			expr, err := getPair(cdr(e))
+			if err != nil {
+				return nil, err
+			}
+			return evalLambda(expr, env)
 		case _vars:
 			for k, v := range env.vars {
 				log.Printf("%v: %v\n", k, v)
 			}
 			return nil, nil
-
 		default:
-			log.Printf("default %v", e)
+			log.Printf("procedure call %v", e)
 			proc, err := eval(car(e), env)
 			if err != nil {
-				return nil, fmt.Errorf("undefined-function: %v", err)
+				return nil, err
 			}
-			args := make(DataList, listLen(e)-1)
-			var next Data
-			var i int
-			for next = cdr(e); next != Nil; next = cdr(e) {
-				var ok bool
-				if e, ok = next.(*Pair); !ok {
-					return nil, fmt.Errorf("yikes, not a list")
-				}
-				args[i], err = eval(car(e), env)
-				if err != nil {
-					return nil, err
-				}
-				i++
+			args, err := evalArgs(cdr(e), env)
+			if err != nil {
+				return nil, err
 			}
-			v := list2cons(args)
-			return apply(proc, v, env)
+			return apply(proc, args, env)
 		}
+	case nil:
+		log.Errorln("parsed a nil?")
+		return Nil, nil
 	}
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
 }
@@ -250,9 +243,9 @@ func (l *Lambda) String() string {
 
 func evalLambda(expr *Pair, env *Env) (Data, error) {
 	l := Lambda{}
-	params, ok := car(expr).(*Pair)
-	if !ok {
-		return nil, fmt.Errorf("bad params: %v", cdr(expr))
+	params, err := getPair(car(expr))
+	if err != nil {
+		return nil, fmt.Errorf("bad params: %v", err)
 	}
 	for params != nil {
 		switch p := car(params).(type) {
@@ -265,7 +258,7 @@ func evalLambda(expr *Pair, env *Env) (Data, error) {
 		if d == nil {
 			break
 		}
-		if params, ok = d.(*Pair); !ok {
+		if params, err = getPair(d); err != nil {
 			return nil, fmt.Errorf("not a pair here %v", d)
 		}
 
@@ -281,6 +274,28 @@ func evalLambda(expr *Pair, env *Env) (Data, error) {
 	l.envt = NewEnv(env)
 	return &l, nil
 
+}
+
+func evalArgs(next Data, env *Env) (*Pair, error) {
+	e, err := getPair(next)
+	if err != nil {
+		return nil, err
+	}
+
+	if e == nil {
+		return Nil, nil
+	}
+
+	val, err := eval(car(e), env)
+	if err != nil {
+		return nil, err
+	}
+
+	rest, err := evalArgs(cdr(e), env)
+	if err != nil {
+		return nil, err
+	}
+	return cons(val, rest), nil
 }
 
 func apply(proc Data, args *Pair, env *Env) (Data, error) {
@@ -358,18 +373,6 @@ func replCLI(env *Env) {
 			fmt.Println(result)
 		}
 	}
-}
-
-func Map(proc Data, l *Pair, env *Env) (Data, error) {
-	for i := car(l); l != nil; {
-		var err error
-		apply(proc, cons(i, nil), env)
-		l, err = listNext(l)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return nil, nil
 }
 
 func ApplyNumeric(f func(Number, Number) Number) InternalFunc {
@@ -534,17 +537,19 @@ func _cons(a Data, b Data) (Data, error) {
 }
 
 func _car(a Data) (Data, error) {
-	if p, ok := a.(*Pair); ok {
-		return car(p), nil
+	p, err := getPair(a)
+	if err != nil {
+		return Nil, fmt.Errorf("car received: %v", err)
 	}
-	return Nil, fmt.Errorf("not a Pair passed to car: %v", a)
+	return car(p), nil
 }
 
 func _cdr(a Data) (Data, error) {
-	if p, ok := a.(*Pair); ok {
-		return cdr(p), nil
+	p, err := getPair(a)
+	if err != nil {
+		return Nil, fmt.Errorf("cdr received: %v", err)
 	}
-	return Nil, fmt.Errorf("not a Pair passed to cdr: %v", a)
+	return cdr(p), nil
 }
 
 func _nullp(a Data) (Data, error) {
