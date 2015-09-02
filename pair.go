@@ -39,7 +39,7 @@ func getPair(d Data) (*Pair, error) {
 	if p, ok := d.(*Pair); ok {
 		return p, nil
 	}
-	return Nil, fmt.Errorf("%v: data is not a pair", d)
+	return Nil, fmt.Errorf("%v: value is not a pair", d)
 }
 
 func cons(car, cdr Data) *Pair {
