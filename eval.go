@@ -136,6 +136,7 @@ var (
 	_quit   = internSymbol("quit")
 	_lambda = internSymbol("lambda")
 	_vars   = internSymbol(":vars")
+	_ok     = internSymbol("ok")
 )
 
 func eval(expr Data, env *Env) (Data, error) {
@@ -157,12 +158,16 @@ func eval(expr Data, env *Env) (Data, error) {
 		case _quote:
 			return cadr(e), nil
 		case _define:
-			v, err := eval(caddr(e), env)
+			expr, err := getPair(cdr(e))
 			if err != nil {
 				return nil, err
 			}
-			env.Bind(cadr(e).(Symbol), v)
-			return env.Var(cadr(e).(Symbol))
+			err = definition(expr, env)
+			if err != nil {
+				return nil, err
+			}
+			// Return value of define is undefined
+			return _ok, nil
 		case _set:
 			d := cadr(e).(Symbol)
 			val, err := eval(caddr(e), env)
@@ -202,11 +207,15 @@ func eval(expr Data, env *Env) (Data, error) {
 		case _quit:
 			os.Exit(0)
 		case _lambda:
-			expr, err := getPair(cdr(e))
+			params, err := getPair(cadr(e))
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("bad params: %v", err)
 			}
-			return evalLambda(expr, env)
+			body, err := getPair(cddr(e))
+			if err != nil {
+				return nil, fmt.Errorf("bad body: %v", err)
+			}
+			return evalLambda(params, body, env)
 		case _vars:
 			for k, v := range env.vars {
 				log.Printf("%v: %v\n", k, v)
@@ -231,6 +240,42 @@ func eval(expr Data, env *Env) (Data, error) {
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
 }
 
+func definition(defn *Pair, env *Env) error {
+	var value Data
+	var name Symbol
+	var err error
+	switch e := car(defn).(type) {
+	// (define var value)
+	case Symbol:
+		name = e
+		value, err = eval(cadr(defn), env)
+		if err != nil {
+			return err
+		}
+	// (define (proc a b) (body))
+	case *Pair:
+		name, err = getSymbol(car(e))
+		if err != nil {
+			return err
+		}
+		params, err := getPair(cdr(e))
+		if err != nil {
+			return err
+		}
+		body, err := getPair(cdr(defn))
+		if err != nil {
+			return err
+		}
+		value, err = evalLambda(params, body, env)
+		if err != nil {
+			return err
+		}
+	}
+
+	env.Bind(name, value)
+	return nil
+}
+
 type Lambda struct {
 	params []Symbol
 	body   []Data
@@ -241,13 +286,10 @@ func (l *Lambda) String() string {
 	return fmt.Sprintf("<function %p: %v>", l, l.body)
 }
 
-func evalLambda(expr *Pair, env *Env) (Data, error) {
+func evalLambda(params *Pair, body *Pair, env *Env) (Data, error) {
 	l := Lambda{}
-	params, err := getPair(car(expr))
-	if err != nil {
-		return nil, fmt.Errorf("bad params: %v", err)
-	}
 	for params != nil {
+		var err error
 		switch p := car(params).(type) {
 		case Symbol:
 			l.params = append(l.params, p)
@@ -263,13 +305,12 @@ func evalLambda(expr *Pair, env *Env) (Data, error) {
 		}
 
 	}
-	expr, _ = listNext(expr)
 	for {
-		if expr == nil {
+		if body == nil {
 			break
 		}
-		l.body = append(l.body, car(expr))
-		expr, _ = listNext(expr)
+		l.body = append(l.body, car(body))
+		body, _ = listNext(body)
 	}
 	l.envt = NewEnv(env)
 	return &l, nil

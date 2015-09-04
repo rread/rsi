@@ -15,7 +15,7 @@ implementation. Someday.
 * integers and arithmetic
 * quote
 * strings (no string functions yet though)
-* define (simple define)
+* define
 * set!
 * begin
 * lambda
@@ -24,20 +24,20 @@ implementation. Someday.
 
 ## Incomplete todo List
 
-1. procedure defines
-2. variable argument support for lambda. (also detect duplicate parameters)
-3. let and friends
-4. cond
-5. case
-6. iteration (do)
-7. tail recursion
-8. string functions
-9. vectors
-10. macros
-12. proper equivalence functions
-13. set-car!, set-cdr!
-14. association lists
-15. ports (io)
-16. rationals
-17. floating point
+- [x] procedure defines
+- [ ] variable argument support for lambda. (also detect duplicate parameters)
+- [ ] let and friends
+- [ ] cond
+- [ ] case
+- [ ] iteration (do)
+- [ ] tail recursion
+- [ ] string functions
+- [ ] vectors
+- [ ] macros
+- [ ] proper equivalence functions
+- [ ] set-car!, set-cdr!
+- [ ] association lists
+- [ ] ports (io)
+- [ ] rationals
+- [ ] floating point
 

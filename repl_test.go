@@ -68,6 +68,7 @@ func TestRepl(t *testing.T) {
 		})
 		Convey("Calculate radius from undefined variable", func() {
 			_, err := repl("(define radius (* pi (* r r)))", env)
+			So(err, ShouldNotBeNil)
 			So(err.Error(), ShouldContainSubstring, "Undefined symbol: R")
 			_, err = repl("radius", env)
 			So(err.Error(), ShouldContainSubstring, "Undefined symbol: RADIUS")
@@ -290,7 +291,7 @@ func TestRepl(t *testing.T) {
 			Convey("Define r and n", func() {
 				val, err := repl("(define r 10)\n(define n 12)", env)
 				So(err, ShouldBeNil)
-				So(val, ShouldEqual, 12)
+				So(val, ShouldEqual, "OK")
 				Convey("Testr r and n", func() {
 					val, err := repl("(+ r n)", env)
 					So(err, ShouldBeNil)
@@ -299,11 +300,22 @@ func TestRepl(t *testing.T) {
 				Convey("Calculate radius", func() {
 					val, err := repl("(define radius (* pi (* r r)))", env)
 					So(err, ShouldBeNil)
+					So(val, ShouldEqual, "OK")
+					val, err = repl("radius", env)
+					So(err, ShouldBeNil)
 					So(val, ShouldEqual, math.Pi*10*10)
 					val, err = repl("(/ radius 10)", env)
 					So(err, ShouldBeNil)
 					So(val, ShouldEqual, math.Pi*10)
 				})
+			})
+			Convey("Procedure definition", func() {
+				val, err := repl("(define (double a)  (+ a a))", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, "OK")
+				val, err = repl("(double 22)", env)
+				So(err, ShouldBeNil)
+				So(val, ShouldEqual, 44)
 			})
 
 		})

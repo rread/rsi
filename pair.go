@@ -60,6 +60,16 @@ func cdr(l *Pair) Data {
 	return l.cdr
 }
 
+func cddr(l *Pair) Data {
+	d := cdr(l)
+	if p, ok := d.(*Pair); ok {
+		return cdr(p)
+	}
+
+	log.Fatalf("pair expected: %v", l)
+	return Nil
+}
+
 func cadr(l *Pair) Data {
 	d := cdr(l)
 	if p, ok := d.(*Pair); ok {
