@@ -11,7 +11,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rread/unlisp/log"
+	"github.com/rread/rsi/log"
 )
 
 // Data is a fundamental type (symbol, boolean, string, number, pair, func)

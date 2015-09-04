@@ -4,7 +4,7 @@ import (
 	"flag"
 	"io/ioutil"
 
-	"github.com/rread/unlisp/log"
+	"github.com/rread/rsi/log"
 )
 
 func main() {

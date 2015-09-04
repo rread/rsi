@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/rread/unlisp/log"
+	"github.com/rread/rsi/log"
 )
 
 type Pair struct {
