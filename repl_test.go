@@ -26,7 +26,7 @@ func TestRepl(t *testing.T) {
 
 		val, err = repl("  ()   ", env)
 		So(err, ShouldBeNil)
-		So(val, ShouldEqual, Nil)
+		So(val, ShouldEqual, Empty)
 
 		val, err = repl("123", env)
 		So(err, ShouldBeNil)
@@ -43,6 +43,14 @@ func TestRepl(t *testing.T) {
 		val, err = repl("  456  ", env)
 		So(err, ShouldBeNil)
 		So(val, ShouldEqual, 456)
+
+		val, err = repl(".123 ", env)
+		So(err, ShouldBeNil)
+		So(val, ShouldEqual, 0.123)
+
+		val, err = repl("'(a . b)", env)
+		So(err, ShouldBeNil)
+		So(S(val), ShouldEqual, "(A . B)")
 
 		val, err = repl(`"bad string`, env)
 		So(err.Error(), ShouldContainSubstring, "unterminated string")
@@ -87,7 +95,7 @@ func TestRepl(t *testing.T) {
 			Convey("null?", func() {
 				val, err := repl("(null? '())", env)
 				So(err, ShouldBeNil)
-				So(val, ShouldEqual, T)
+				So(val, ShouldEqual, False)
 
 				val, err = repl("(null? 123)", env)
 				So(err, ShouldBeNil)
@@ -129,7 +137,7 @@ func TestRepl(t *testing.T) {
 		Convey("If statements", func() {
 			val, err := repl("(if (<= 4 2) (* 10 2))", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, "<nil>")
+			So(val, ShouldEqual, Empty)
 
 			val, err = repl("(if (< 4 2) (* 10 2) (+ 1 2))", env)
 			So(err, ShouldBeNil)
@@ -149,7 +157,7 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(if '() 'a 'b)", env)
 			So(err, ShouldBeNil)
-			So(S(val), ShouldEqual, ("B"))
+			So(S(val), ShouldEqual, ("A"))
 
 			val, err = repl("(if 0 'a 'b)", env)
 			So(err, ShouldBeNil)
@@ -348,7 +356,12 @@ func TestRepl(t *testing.T) {
 
 			val, err = repl("(cdr (cdr (cdr (cons 1 '(2 3)))))", env)
 			So(err, ShouldBeNil)
-			So(val, ShouldResemble, Nil)
+			So(val, ShouldResemble, Empty)
+		})
+
+		Convey("Test let statements", func() {
+			s(env, "(let ((a 1) (b 2)) (+ a b))", Number(3), nil)
+			s(env, "(let ((a 3) (b 2)) (* a b))", Number(6), nil)
 		})
 
 		Convey("factorial 10", func() {
@@ -363,13 +376,22 @@ func TestRepl(t *testing.T) {
 	})
 }
 
+func s(env *Env, exp string, value Data, err error) {
+	Convey(fmt.Sprintf("%v => %v", exp, value), func() {
+		val, err := repl(exp, env)
+		So(err, ShouldEqual, err)
+		So(val, ShouldEqual, value)
+	})
+}
+
 func TestEndofFile(t *testing.T) {
 	env := DefaultEnv()
 	Convey("fail when given imbalanced parens", t, func() {
 		_, err := repl("(define counter (lambda (n) (lambda () (set! n (+ n 1))))", env)
 		if err == nil {
 			t.Fail()
+		} else {
+			So(err.Error(), ShouldContainSubstring, "End of File")
 		}
-		So(err.Error(), ShouldContainSubstring, "End of File")
 	})
 }

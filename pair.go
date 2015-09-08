@@ -15,7 +15,7 @@ func (p *Pair) String() string {
 	ret := "("
 	for {
 		ret += fmt.Sprintf("%v", p.car)
-		if p.cdr == Nil {
+		if nullp(p.cdr) {
 			break
 		}
 		if pairp(p.cdr) {
@@ -32,114 +32,122 @@ func (p *Pair) String() string {
 	return ret
 }
 
-func getPair(d Data) (*Pair, error) {
-	if d == Nil {
-		return Nil, nil
+func getList(d Data) (Data, error) {
+	if nullp(d) {
+		return Empty, nil
 	}
-	if p, ok := d.(*Pair); ok {
-		return p, nil
+	switch v := d.(type) {
+	case *Pair:
+		return v, nil
+	case error:
+		return nil, v
+	default:
+		return nil, fmt.Errorf("%v: value is not a pair", d)
+
 	}
-	return Nil, fmt.Errorf("%v: value is not a pair", d)
 }
 
-func cons(car, cdr Data) *Pair {
+func getPair(d Data) (*Pair, error) {
+	if nullp(d) {
+		return nil, fmt.Errorf("%v: value is not a pair", d)
+	}
+	switch v := d.(type) {
+	case *Pair:
+		return v, nil
+	case error:
+		return nil, v
+	default:
+		return nil, fmt.Errorf("%v: value is not a pair", d)
+
+	}
+}
+
+func cons(car, cdr Data) Data {
+	if getError(car) != nil {
+		return car
+	}
+	if getError(cdr) != nil {
+		return cdr
+	}
 	return &Pair{car, cdr}
 }
 
-func car(l *Pair) Data {
-	if l == nil {
-		return Nil
+func cdr(d Data) Data {
+	l, err := getPair(d)
+	if err != nil {
+		return err
+	}
+
+	return l.cdr
+}
+
+func car(d Data) Data {
+	l, err := getPair(d)
+	if err != nil {
+		return err
 	}
 	return l.car
 }
 
-func cdr(l *Pair) Data {
-	if l == nil {
-		return Nil
-	}
-	return l.cdr
+func cadr(d Data) Data {
+	return car(cdr(d))
 }
 
-func cddr(l *Pair) Data {
-	d := cdr(l)
-	if p, ok := d.(*Pair); ok {
-		return cdr(p)
-	}
-
-	log.Fatalf("pair expected: %v", l)
-	return Nil
+func cddr(d Data) Data {
+	return cdr(cdr(d))
 }
 
-func cadr(l *Pair) Data {
-	d := cdr(l)
-	if p, ok := d.(*Pair); ok {
-		return car(p)
-	}
-	log.Fatalf("pair expected: %v", l)
-	return Nil
+func caddr(l Data) Data {
+	return car(cdr(cdr(l)))
 }
 
-func caddr(l *Pair) Data {
-	d := cdr(l)
-	if p, ok := d.(*Pair); ok {
-		d := cdr(p)
-		if p, ok := d.(*Pair); ok {
-			return car(p)
-		}
-	}
-
-	log.Fatalf("pair expected: %v", l)
-	return Nil
-}
-
-func cadddr(l *Pair) Data {
-	d := cdr(l)
-	if p, ok := d.(*Pair); ok {
-		d := cdr(p)
-		if p, ok := d.(*Pair); ok {
-			d := cdr(p)
-			if p, ok := d.(*Pair); ok {
-				return car(p)
-			}
-		}
-	}
-	log.Fatal("pair expected")
-	return Nil
-}
-
-func nullp(p *Pair) Boolean {
-	return p == Nil
+func cadddr(l Data) Data {
+	return car(cdr(cdr(cdr(l))))
 }
 
 func pairp(d Data) Boolean {
 	_, ok := d.(*Pair)
 	if !ok {
-		log.Printf("consp %T %v %v", d, d, ok)
+		log.Printf("pairp %T %v %v", d, d, ok)
 	}
 	return Boolean(ok)
 }
 
-func listNext(l *Pair) (*Pair, error) {
-	d := cdr(l)
+func listNext(d Data) (*Pair, error) {
+	l, err := getPair(d)
+	if err != nil {
+		return nil, err
+	}
+	d = cdr(l)
 	return getPair(d)
 }
 
-func listLen(p *Pair) int {
-	var i int
-	if p == Nil {
-		return i
+func listLen(d Data) int {
+	if nullp(d) {
+		return 0
 	}
+	var i int
 	for {
 		i++
-		d := cdr(p)
-		if d == Nil {
+		d = cdr(d)
+		if nullp(d) {
 			break
 		}
-
-		var ok bool
-		if p, ok = d.(*Pair); !ok {
+		if !pairp(d) {
 			log.Fatal("expecting a list")
 		}
 	}
 	return i
+}
+
+func reverse(d Data) Data {
+	var li Data = Empty
+	for {
+		if nullp(d) {
+			break
+		}
+		li = cons(car(d), li)
+		d = cdr(d)
+	}
+	return li
 }

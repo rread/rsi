@@ -13,10 +13,12 @@ const (
 	ILLEGAL Token = iota
 	EOF
 	WS
+	COMMENT
 	SYMBOL
 	NUMBER
 	LEFT_PAREN
 	RIGHT_PAREN
+	DOT
 	QUOTE
 	DQUOTE
 	STRING
@@ -34,6 +36,8 @@ func (t Token) String() string {
 		return "EOF"
 	case WS:
 		return "WS"
+	case COMMENT:
+		return "COMMENT"
 	case SYMBOL:
 		return "SYMBOL"
 	case NUMBER:
@@ -42,6 +46,8 @@ func (t Token) String() string {
 		return "LEFT_PAREN"
 	case RIGHT_PAREN:
 		return "RIGHT_PAREN"
+	case DOT:
+		return "DOT"
 	case QUOTE:
 		return "QUOTE"
 	case DQUOTE:
@@ -196,6 +202,8 @@ func lexBase(l *Lexer) stateFn {
 			return nil
 		case isWhitespace(ch):
 			l.ignore()
+		case ch == ';':
+			return lexComment
 		case ch == '(':
 			l.emit(LEFT_PAREN)
 			return lexBase
@@ -213,6 +221,8 @@ func lexBase(l *Lexer) stateFn {
 		case ch == '#':
 			l.ignore()
 			return lexHash
+		case ch == '.':
+			return lexDot
 		case isNumber(ch):
 			return lexNumber
 		case isSymbol(ch):
@@ -233,6 +243,12 @@ func symbolOrNumber(l *Lexer) stateFn {
 	return lexSymbol
 }
 
+func lexComment(l *Lexer) stateFn {
+	for l.next() != '\n' {
+	}
+	l.ignore()
+	return lexBase
+}
 func lexNumber(l *Lexer) stateFn {
 	l.acceptRun("0123456789.")
 	l.emit(NUMBER)
@@ -249,6 +265,14 @@ func lexHash(l *Lexer) stateFn {
 		return l.errorf("unsupported hash code #%v", l.input[l.start:l.pos])
 	}
 	return lexBase
+}
+
+func lexDot(l *Lexer) stateFn {
+	if isWhitespace(l.peek()) {
+		l.emit(DOT)
+		return lexBase
+	}
+	return lexNumber
 }
 
 func lexSymbol(l *Lexer) stateFn {
