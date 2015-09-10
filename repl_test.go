@@ -12,6 +12,27 @@ func S(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
+var result Data
+
+func BenchmarkFactorial(b *testing.B) {
+	b.StopTimer()
+	env := DefaultEnv()
+	value, err := repl("(define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))", env)
+	if err != nil {
+		panic(err)
+	}
+	result = value
+	b.StartTimer()
+
+	for n := 0; n < b.N; n++ {
+		val, err := repl("(fact 100)", env)
+		if err != nil {
+			panic(err)
+		}
+		result = val
+	}
+}
+
 func TestRepl(t *testing.T) {
 
 	Convey("basic lexer testing", t, func() {
@@ -178,7 +199,7 @@ func TestRepl(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(S(val), ShouldEqual, "(1 1)")
 
-			_, err = repl("(lambda () (+ 1 1))", env)
+			_, err = repl("(lambda () (+ 2 3) (+ 1 1))", env)
 			So(err, ShouldBeNil)
 
 			val, err = repl("((lambda () (+ 1 1)))", env)

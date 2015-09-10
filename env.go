@@ -16,6 +16,29 @@ func NewEnv(outer *Env) *Env {
 
 }
 
+func ExtendEnv(names []Symbol, values Data, outer *Env) (*Env, error) {
+	env := NewEnv(outer)
+	if len(names) != listLen(values) {
+		return nil, fmt.Errorf("parameter mismatch %v != %v", names, values)
+	}
+	for _, name := range names {
+
+		val := car(values)
+
+		if err := getError(val); err != nil {
+			return nil, err
+		}
+		env.Bind(name, val)
+
+		values = cdr(values)
+		if err := getError(val); err != nil {
+			return nil, err
+		}
+
+	}
+	return env, nil
+}
+
 func (e *Env) BindName(name string, i Data) {
 	sym := internSymbol(name)
 	e.vars[sym] = i
