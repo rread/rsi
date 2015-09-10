@@ -405,34 +405,31 @@ func getError(d Data) error {
 	return nil
 }
 
-func _map(f func(Data) Data, d Data) Data {
+func internalMap(f func(Data) Data, d Data) Data {
 	if nullp(d) {
 		return Empty
 	}
-	lst, err := getPair(d)
-	if err != nil {
-		return err
+	first := car(d)
+	if getError(first) != nil {
+		return first
 	}
-	if nullp(lst) {
-		return Empty
-	}
-	e := f(car(lst))
+	e := f(first)
 	if err := getError(e); err != nil {
 		return err
 	}
-	rest := cdr(lst)
+	rest := cdr(d)
 	if err := getError(rest); err != nil {
 		return err
 	}
-	return cons(e, _map(f, rest))
+	return cons(e, internalMap(f, rest))
 }
 
 func let(expr Data, env *Env) (Data, error) {
-	arguments := _map(car, car(expr))
+	arguments := internalMap(car, car(expr))
 	if err := getError(arguments); err != nil {
 		return nil, err
 	}
-	values := _map(cadr, car(expr))
+	values := internalMap(cadr, car(expr))
 	if err := getError(values); err != nil {
 		return nil, err
 	}

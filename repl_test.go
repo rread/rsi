@@ -59,7 +59,7 @@ func TestRepl(t *testing.T) {
 
 		val, err = repl("'-", env)
 		So(err, ShouldBeNil)
-		So(S(val), ShouldResemble, "-")
+		So(S(val), ShouldEqual, "-")
 
 		val, err = repl("  456  ", env)
 		So(err, ShouldBeNil)
@@ -359,6 +359,14 @@ func TestRepl(t *testing.T) {
 			So(err, ShouldBeNil)
 			So(S(val), ShouldEqual, "(1 . 2)")
 
+			val, err = repl("(cdr (cons 1 2))", env)
+			So(err, ShouldBeNil)
+			So(val, ShouldEqual, 2)
+
+			val, err = repl("(cons 1 (cons 2 3))", env)
+			So(err, ShouldBeNil)
+			So(S(val), ShouldEqual, "(1 2 . 3)")
+
 			val, err = repl("(cons 1 '(2 3))", env)
 			So(err, ShouldBeNil)
 			So(S(val), ShouldEqual, "(1 2 3)")
@@ -380,39 +388,60 @@ func TestRepl(t *testing.T) {
 			So(val, ShouldResemble, Empty)
 		})
 
-		Convey("Test let statements", func() {
-			s(env, "(let ((a 1) (b 2)) (+ a b))", Number(3), nil)
-			s(env, "(let ((a 3) (b 2)) (* a b))", Number(6), nil)
-		})
+		factorial := []TestCase{
+			{"(define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))", "OK", ""},
+			{"(fact 10)", 3.6288e+06, ""},
+		}
+		doCases("factorial", factorial)
 
-		Convey("factorial 10", func() {
-			val, err := repl("(define fact (lambda (n) (if (<= n 1) 1 (* n (fact (- n 1))))))", env)
-			So(err, ShouldBeNil)
+		letCases := []TestCase{
+			{"(let ((a 1) (b 2)) (+ a b))", Number(3), ""},
+			{"(let ((a 3) (b 2)) (* a b))", Number(6), ""},
+			{"(let () (* a b))", nil, "Undefined symbol: A"},
+			{"(let (()) (* a b))", nil, "(): value is not a pair"},
+			{"(let ((a 1) ()) (* a b))", nil, "(): value is not a pair"},
+			{"(let ((a 1)) )", nil, "(): value is not a pair"},
+		}
+		doCases("Test let statements", letCases)
 
-			val, err = repl("(fact 10)", env)
-			So(err, ShouldBeNil)
-			So(val, ShouldEqual, 3.6288e+06)
-
-		})
-	})
-}
-
-func s(env *Env, exp string, value Data, err error) {
-	Convey(fmt.Sprintf("%v => %v", exp, value), func() {
-		val, err := repl(exp, env)
-		So(err, ShouldEqual, err)
-		So(val, ShouldEqual, value)
 	})
 }
 
 func TestEndofFile(t *testing.T) {
-	env := DefaultEnv()
 	Convey("fail when given imbalanced parens", t, func() {
-		_, err := repl("(define counter (lambda (n) (lambda () (set! n (+ n 1))))", env)
-		if err == nil {
-			t.Fail()
-		} else {
-			So(err.Error(), ShouldContainSubstring, "End of File")
+		imbalanced := []TestCase{
+			{"(", nil, "End of File"},
+			{"(define counter (lambda (n) (lambda () (set! n (+ n 1))))", nil, "End of File"},
+			{"(let ((a 1 ) (+ a a)))", nil, "Undefined symbol: A"},
+		}
+		doCases("fail when given imbalanced parens", imbalanced)
+	})
+}
+
+type TestCase struct {
+	expr        string
+	value       Data
+	expectedErr string
+}
+
+func doRepl(env *Env, exp string, value Data, expectedErr string) {
+	if expectedErr == "" {
+		Printf("%v => %v\n", exp, value)
+	} else {
+		Printf("%v !FAIL> \"%v\"\n", exp, expectedErr)
+	}
+	val, err := repl(exp, env)
+	if err != nil {
+		So(err.Error(), ShouldContainSubstring, expectedErr)
+	}
+	So(val, ShouldEqual, value)
+}
+
+func doCases(name string, cases []TestCase) {
+	Convey(name, func() {
+		env := DefaultEnv()
+		for _, c := range cases {
+			doRepl(env, c.expr, c.value, c.expectedErr)
 		}
 	})
 }
