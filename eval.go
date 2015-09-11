@@ -59,9 +59,9 @@ func (n Null) String() string {
 
 func nullp(d Data) Boolean {
 	if v, ok := d.(Null); ok {
-		return v == Empty
+		return Boolean(v == Empty)
 	}
-	return false
+	return False
 }
 
 type Tokenizer interface {
@@ -684,10 +684,7 @@ func _cdr(a Data) (Data, error) {
 }
 
 func _nullp(a Data) (Data, error) {
-	if p, ok := a.(*Pair); ok {
-		return nullp(p), nil
-	}
-	return False, nil
+	return nullp(a), nil
 }
 
 func _pairp(a Data) (Data, error) {
