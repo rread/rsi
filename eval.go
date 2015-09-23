@@ -83,7 +83,7 @@ func read(l Tokenizer) (Data, error) {
 	if t.token == WS {
 		t = l.NextItem()
 	}
-	log.Printf("scan: %v\n", t)
+	//log.Debugf("scan: %v\n", t)
 	switch t.token {
 	case LEFT_PAREN:
 		return readList(l)
@@ -178,132 +178,134 @@ var (
 
 func eval(expr Data, env *Env) (Data, error) {
 	log.Printf("eval: %T: %v\n", expr, expr)
-	for {
-		switch e := expr.(type) {
-		case Boolean:
-			return e, nil
-		case Symbol:
-			return env.FindVar(e)
-		case Number:
-			return e, nil
-		case String:
-			return e, nil
-		case Null:
-			return e, nil
-		case *Pair:
-			c, _ := getSymbol(car(e))
-			/* non-Symbols fall through to default */
-			switch c {
-			case _quote:
-				return cadr(e), nil
-			case _define:
-				expr, err := getPair(cdr(e))
-				if err != nil {
-					return nil, err
-				}
-				err = definition(expr, env)
-				if err != nil {
-					return nil, err
-				}
-				// Return value of define is undefined
-				return _ok, nil
-			case _set:
-				d, err := getSymbol(cadr(e))
-				if err != nil {
-					return nil, err
-				}
-				val, err := eval(caddr(e), env)
-				if err != nil {
-					return nil, err
-				}
-				env.Find(d).Bind(d, val)
-				return nil, nil
-			case _if:
-				test, _ := eval(cadr(e), env)
-				if isTrue(test) {
-					expr = caddr(e)
-				} else if listLen(e) > 3 {
-					expr = cadddr(e)
-				} else {
-					return Empty, nil
-				}
-			case _let:
-				letExpr, err := let(cdr(e), env)
-				if err != nil {
-					return nil, err
-				}
-				return eval(letExpr, env)
-			case _begin:
-				e, err := getPair(cdr(e))
-				if err != nil {
-					return nil, err
-				}
-				for !nullp(e) {
-					if nullp(cdr(e)) {
-						expr = car(e)
-						break
-					}
-					_, err = eval(car(e), env)
-					if err != nil {
-						return nil, err
-					}
-					e, err = listNext(e)
-					if err != nil {
-						return nil, err
-					}
-
-				}
-
-			case _quit:
-				os.Exit(0)
-			case _lambda:
-				params, err := getList(cadr(e))
-				if err != nil {
-					return nil, fmt.Errorf("bad params: %v", err)
-				}
-				body, err := getList(cddr(e))
-				if err != nil {
-					return nil, fmt.Errorf("bad body: %v", err)
-				}
-				return evalLambda(params, body, env)
-			case _vars:
-				for k, v := range env.vars {
-					log.Printf("%v: %v\n", k, v)
-				}
-				return nil, nil
-			default:
-				log.Printf("procedure call %v", e)
-				proc, err := eval(car(e), env)
-				if err != nil {
-					return nil, err
-				}
-				args, err := evalArgs(cdr(e), env)
-				if err != nil {
-					return nil, err
-				}
-				switch f := proc.(type) {
-				case InternalFunc:
-					return f(args)
-				case *Lambda:
-					var err error
-					env, err = ExtendEnv(f.params, args, f.envt)
-					if err != nil {
-						return nil, err
-					}
-					expr = cons(_begin, f.body)
-				default:
-					return nil, fmt.Errorf("apply to a non function: %#v %v", proc, args)
-				}
-
+	switch e := expr.(type) {
+	case Boolean:
+		return e, nil
+	case Symbol:
+		return env.FindVar(e)
+	case Number:
+		return e, nil
+	case String:
+		return e, nil
+	case Null:
+		return e, nil
+	case *Pair:
+		c, _ := getSymbol(car(e))
+		/* non-Symbols fall through to default */
+		switch c {
+		case _quote:
+			return cadr(e), nil
+		case _define:
+			expr, err := getPair(cdr(e))
+			if err != nil {
+				return nil, err
 			}
-		case nil:
-			log.Fatal("parsed a nil?")
+			err = definition(expr, env)
+			if err != nil {
+				return nil, err
+			}
+			// Return value of define is undefined
+			return _ok, nil
+		case _set:
+			d, err := getSymbol(cadr(e))
+			if err != nil {
+				return nil, err
+			}
+			val, err := eval(caddr(e), env)
+			if err != nil {
+				return nil, err
+			}
+			env.Find(d).Bind(d, val)
+			return _ok, nil
+		case _if:
+			test, _ := eval(cadr(e), env)
+			if isTrue(test) {
+				return eval(caddr(e), env)
+			} else if listLen(e) > 3 {
+				return eval(cadddr(e), env)
+			}
+			return Empty, nil
+		case _let:
+			letExpr, err := let(cdr(e), env)
+			if err != nil {
+				return nil, err
+			}
+			return letExpr, nil
+		case _begin:
+			return evalSequential(cdr(e), env)
+		case _quit:
+			os.Exit(0)
+		case _lambda:
+			params, err := getList(cadr(e))
+			if err != nil {
+				return nil, fmt.Errorf("bad params: %v", err)
+			}
+			body, err := getList(cddr(e))
+			if err != nil {
+				return nil, fmt.Errorf("bad body: %v", err)
+			}
+			return evalLambda(params, body, env)
+		case _vars:
+			for k, v := range env.vars {
+				log.Printf("%v: %v\n", k, v)
+			}
 			return nil, nil
+		default:
+			log.Printf("procedure call %v", e)
+			proc, err := eval(car(e), env)
+			if err != nil {
+				return nil, err
+			}
+			args, err := evalArgs(cdr(e), env)
+			if err != nil {
+				return nil, err
+			}
+			switch f := proc.(type) {
+			case InternalFunc:
+				return f(args)
+			case *Lambda:
+				var err error
+				env, err = ExtendEnv(f.params, args, f.envt)
+				if err != nil {
+					return nil, err
+				}
+				return evalSequential(f.body, env)
+			default:
+				return nil, fmt.Errorf("apply to a non function: %#v %v", proc, args)
+			}
+
 		}
+	case nil:
+		log.Fatal("parsed a nil?")
+		return nil, nil
 	}
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
 }
 
+func evalSequential(e Data, env *Env) (Data, error) {
+	var v Data
+	e, err := getPair(e)
+	if err != nil {
+		return nil, err
+	}
+	for !nullp(e) {
+		log.Printf("begin: %v", e)
+		v, err = eval(car(e), env)
+		if err != nil {
+			return nil, err
+		}
+		if nullp(cdr(e)) {
+			break
+		}
+		e, err = listNext(e)
+		if err != nil {
+			return nil, err
+		}
+
+	}
+	return v, nil
+
+}
 func definition(defn *Pair, env *Env) error {
 	var value Data
 	var name Symbol
@@ -322,10 +324,8 @@ func definition(defn *Pair, env *Env) error {
 		if err != nil {
 			return err
 		}
-		params, err := getPair(cdr(e))
-		if err != nil {
-			return err
-		}
+		params := cdr(e)
+
 		body, err := getPair(cdr(defn))
 		if err != nil {
 			return err
@@ -341,17 +341,27 @@ func definition(defn *Pair, env *Env) error {
 }
 
 type Lambda struct {
+	index  int
 	params []Symbol
 	body   Data
 	envt   *Env
 }
 
+var lambdaCounter int = 0
+
+func NewLambda() *Lambda {
+	l := &Lambda{
+		index: lambdaCounter,
+	}
+	lambdaCounter++
+	return l
+}
 func (l *Lambda) String() string {
-	return fmt.Sprintf("<function %p: %v>", l, l.body)
+	return fmt.Sprintf("#<compound-procedure: #%d>", l.index)
 }
 
 func evalLambda(params Data, body Data, env *Env) (Data, error) {
-	l := Lambda{}
+	l := NewLambda()
 	for params != Empty {
 		var err error
 		p, err := getPair(params)
@@ -368,8 +378,7 @@ func evalLambda(params Data, body Data, env *Env) (Data, error) {
 	}
 	l.body = body
 	l.envt = NewEnv(env)
-	return &l, nil
-
+	return l, nil
 }
 
 func evalArgs(next Data, env *Env) (Data, error) {
@@ -429,6 +438,7 @@ func let(expr Data, env *Env) (Data, error) {
 	if err := getError(arguments); err != nil {
 		return nil, err
 	}
+
 	values := internalMap(cadr, car(expr))
 	if err := getError(values); err != nil {
 		return nil, err
@@ -600,15 +610,12 @@ func EmptyEnv() *Env {
 
 func DefaultEnv() *Env {
 	env := EmptyEnv()
-	//	env.Bind(internSymbol("#t"), T)
 	env.BindName("*", ApplyNumeric(func(x, y Number) Number {
 		return x * y
 	}))
-
 	env.BindName("-", ApplyNumeric(func(x, y Number) Number {
 		return x - y
 	}))
-
 	env.BindName("/", ApplyNumeric(func(x, y Number) Number {
 		return x / y
 	}))
@@ -651,7 +658,6 @@ func DefaultEnv() *Env {
 		if err != nil {
 			return nil, err
 		}
-		log.Printf("%v", a)
 		return Boolean(reflect.DeepEqual(car(a), cadr(a))), nil
 	}))
 	env.BindName("pi", Number(math.Pi))

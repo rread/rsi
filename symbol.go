@@ -5,17 +5,6 @@ import (
 	"strings"
 )
 
-type DataType int
-
-const (
-	ConsType = DataType(iota)
-	SymbolType
-	NumberType
-	StringType
-	FuncType
-	NativeType
-)
-
 func getSymbol(d Data) (Symbol, error) {
 	if p, ok := d.(Symbol); ok {
 		return p, nil
