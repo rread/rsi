@@ -10,6 +10,10 @@ Unlike lis.py, which used native python lists, this implementation is
 based on cons lists and is aiming to be a more complete
 implementation. Someday.
 
+## Testing
+
+Travis CI: https://travis-ci.org/rread/rsi
+
 ## Currently supports (more or less)
 
 * integers and arithmetic
