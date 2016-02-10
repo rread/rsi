@@ -1,4 +1,4 @@
-package main
+package lexer
 
 import (
 	"fmt"
@@ -94,7 +94,7 @@ type Lexer struct {
 	items chan *TokenItem
 }
 
-func NewLexer(name, input string) *Lexer {
+func New(name, input string) *Lexer {
 	l := &Lexer{
 		name:  name,
 		input: input,

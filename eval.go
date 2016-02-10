@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/rread/rsi/lexer"
 	"github.com/rread/rsi/log"
 )
 
@@ -65,7 +66,7 @@ func nullp(d Data) Boolean {
 }
 
 type Tokenizer interface {
-	NextItem() *TokenItem
+	NextItem() *lexer.TokenItem
 }
 
 var (
@@ -82,33 +83,33 @@ func read(l Tokenizer) (Data, error) {
 	}
 	//log.Debugf("scan: %v\n", t)
 	switch t.Token {
-	case LEFT_PAREN:
+	case lexer.LEFT_PAREN:
 		return readList(l)
-	case RIGHT_PAREN:
+	case lexer.RIGHT_PAREN:
 		return nil, nil
-	case SYMBOL:
+	case lexer.SYMBOL:
 		return internSymbol(t.Lit), nil
-	case QUOTE:
+	case lexer.QUOTE:
 		return readQuote(l)
-	case NUMBER:
+	case lexer.NUMBER:
 		v, err := strconv.ParseFloat(t.Lit, 64)
 		if err != nil {
 			log.Fatal("Number fail:", err)
 		}
 		return Number(v), nil
-	case EOF:
+	case lexer.EOF:
 		return nil, ErrorEOF
-	case STRING:
+	case lexer.STRING:
 		return StringWithValue(t.Lit), nil
-	case TRUE:
+	case lexer.TRUE:
 		return T, nil
-	case FALSE:
+	case lexer.FALSE:
 		return False, nil
-	case DOT:
+	case lexer.DOT:
 		return _dot, nil
-	case ILLEGAL:
+	case lexer.ILLEGAL:
 		return nil, errors.New(t.Lit)
-	case COMMENT:
+	case lexer.COMMENT:
 		return read(l)
 	}
 	return nil, errors.New("Malformed input")
@@ -474,7 +475,7 @@ func replReader(in io.Reader, env *Env) (Data, error) {
 	//	l := NewScanner(in)
 	buf := make([]byte, 1024)
 	n, _ := in.Read(buf)
-	l := NewLexer("lispy", string(buf[:n]))
+	l := lexer.New("lispy", string(buf[:n]))
 	var result Data
 	for {
 		var err error

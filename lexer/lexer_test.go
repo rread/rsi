@@ -1,4 +1,4 @@
-package main
+package lexer
 
 import (
 	"testing"
@@ -19,15 +19,24 @@ func TestLexer(t *testing.T) {
 			{"", `EOF ""`, ""},
 			{"\n  ", `EOF ""`, ""},
 			{"; asdf", `COMMENT "; asdf"`, ""},
+			{"; asdf\n", `COMMENT "; asdf\n"`, ""},
 			{"(", `LEFT_PAREN "("`, ""},
 			{")", `RIGHT_PAREN ")"`, ""},
 			{" . ", `DOT "."`, ""},
 			{"'", `QUOTE "'"`, ""},
+			{"-", `SYMBOL "-"`, ""},
+			{"-1", `NUMBER "-1"`, ""},
+			{".", `NUMBER "."`, ""},
 			{"123", `NUMBER "123"`, ""},
+			{"-abc", `SYMBOL "-abc"`, ""},
 			{"abc", `SYMBOL "abc"`, ""},
 			{`"abc"`, `STRING "abc"`, ""},
+			{`"abc\`, `ILLEGAL "unterminated string: \"abc\""`, ""},
 			{"#t", `TRUE "t"`, ""},
 			{"#f", `FALSE "f"`, ""},
+			{"#n", `ILLEGAL "unsupported hash code #n"`, ""},
+			{"a(", `SYMBOL "a"`, ""},
+			{"12(", `NUMBER "12"`, ""},
 		} {
 			doLex(c.value, c.expected, c.err)
 		}
@@ -41,7 +50,7 @@ func TestLexer(t *testing.T) {
 }
 
 func doLex(expr, expectedValue, expectedError string) {
-	l := NewLexer("test", expr)
+	l := New("test", expr)
 	ti := l.NextItem()
 	So(ti.String(), ShouldEqual, expectedValue)
 
