@@ -81,17 +81,17 @@ func read(l Tokenizer) (Data, error) {
 		return nil, ErrorEOF
 	}
 	//log.Debugf("scan: %v\n", t)
-	switch t.token {
+	switch t.Token {
 	case LEFT_PAREN:
 		return readList(l)
 	case RIGHT_PAREN:
 		return nil, nil
 	case SYMBOL:
-		return internSymbol(t.lit), nil
+		return internSymbol(t.Lit), nil
 	case QUOTE:
 		return readQuote(l)
 	case NUMBER:
-		v, err := strconv.ParseFloat(t.lit, 64)
+		v, err := strconv.ParseFloat(t.Lit, 64)
 		if err != nil {
 			log.Fatal("Number fail:", err)
 		}
@@ -99,7 +99,7 @@ func read(l Tokenizer) (Data, error) {
 	case EOF:
 		return nil, ErrorEOF
 	case STRING:
-		return StringWithValue(t.lit), nil
+		return StringWithValue(t.Lit), nil
 	case TRUE:
 		return T, nil
 	case FALSE:
@@ -107,7 +107,7 @@ func read(l Tokenizer) (Data, error) {
 	case DOT:
 		return _dot, nil
 	case ILLEGAL:
-		return nil, errors.New(t.lit)
+		return nil, errors.New(t.Lit)
 	case COMMENT:
 		return read(l)
 	}

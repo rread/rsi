@@ -77,12 +77,12 @@ func isSymbol(ch rune) bool {
 }
 
 type TokenItem struct {
-	token Token
-	lit   string
+	Token Token
+	Lit   string
 }
 
 func (tok *TokenItem) String() string {
-	return fmt.Sprintf("%s %#v", tok.token, tok.lit)
+	return fmt.Sprintf("%s %#v", tok.Token, tok.Lit)
 }
 
 type Lexer struct {
@@ -140,8 +140,8 @@ func (l *Lexer) ignore() {
 // emit sends the current range as a t token and resets
 // the range.
 func (l *Lexer) emit(t Token) {
-	l.items <- &TokenItem{token: t,
-		lit: l.input[l.start:l.pos]}
+	l.items <- &TokenItem{Token: t,
+		Lit: l.input[l.start:l.pos]}
 	l.start = l.pos
 }
 
