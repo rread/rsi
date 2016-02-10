@@ -50,6 +50,10 @@ func TestRepl(t *testing.T) {
 			{`"string with \" quote`, nil, "unterminated string"},
 			{`"string with \"`, nil, "unterminated string"},
 			{`"string with \" quote"`, `"string with " quote"`, ""},
+			{"123 ; comment", 123, ""},
+			{"123 ; comment\n", 123, ""},
+			{"#n", nil, "unsupported hash code #n"},
+			{`"\`, nil, "unterminated string"},
 		}
 
 		doCases("Lexer Tests", lexer, env)

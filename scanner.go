@@ -12,7 +12,6 @@ type Token int
 const (
 	ILLEGAL Token = iota
 	EOF
-	WS
 	COMMENT
 	SYMBOL
 	NUMBER
@@ -20,7 +19,6 @@ const (
 	RIGHT_PAREN
 	DOT
 	QUOTE
-	DQUOTE
 	STRING
 	TRUE
 	FALSE
@@ -34,8 +32,6 @@ func (t Token) String() string {
 		return "ILLEGAL"
 	case EOF:
 		return "EOF"
-	case WS:
-		return "WS"
 	case COMMENT:
 		return "COMMENT"
 	case SYMBOL:
@@ -50,8 +46,6 @@ func (t Token) String() string {
 		return "DOT"
 	case QUOTE:
 		return "QUOTE"
-	case DQUOTE:
-		return "DQUOTE"
 	case STRING:
 		return "STRING"
 	case TRUE:
@@ -164,6 +158,7 @@ func (l *Lexer) run() {
 	close(l.items)
 }
 
+/*
 func (l *Lexer) accept(valid string) bool {
 	if strings.IndexRune(valid, l.next()) >= 0 {
 		return true
@@ -171,7 +166,7 @@ func (l *Lexer) accept(valid string) bool {
 	l.rewind()
 	return false
 }
-
+*/
 func (l *Lexer) acceptRun(valid string) {
 	l.acceptRunFn(func(r rune) bool {
 		return strings.IndexRune(valid, r) >= 0
@@ -244,10 +239,16 @@ func symbolOrNumber(l *Lexer) stateFn {
 }
 
 func lexComment(l *Lexer) stateFn {
-	for l.next() != '\n' {
+	for {
+		switch ch := l.next(); {
+		case ch == '\n':
+			l.emit(COMMENT)
+			return lexBase
+		case ch == eof:
+			l.emit(COMMENT)
+			return lexBase
+		}
 	}
-	l.ignore()
-	return lexBase
 }
 func lexNumber(l *Lexer) stateFn {
 	l.acceptRun("0123456789.")

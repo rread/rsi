@@ -80,9 +80,6 @@ func read(l Tokenizer) (Data, error) {
 	if t == nil {
 		return nil, ErrorEOF
 	}
-	if t.token == WS {
-		t = l.NextItem()
-	}
 	//log.Debugf("scan: %v\n", t)
 	switch t.token {
 	case LEFT_PAREN:
@@ -111,6 +108,8 @@ func read(l Tokenizer) (Data, error) {
 		return _dot, nil
 	case ILLEGAL:
 		return nil, errors.New(t.lit)
+	case COMMENT:
+		return read(l)
 	}
 	return nil, errors.New("Malformed input")
 }
@@ -196,41 +195,13 @@ func eval(expr Data, env *Env) (Data, error) {
 		case _quote:
 			return cadr(e), nil
 		case _define:
-			expr, err := getPair(cdr(e))
-			if err != nil {
-				return nil, err
-			}
-			err = definition(expr, env)
-			if err != nil {
-				return nil, err
-			}
-			// Return value of define is undefined
-			return _ok, nil
+			return evalDefine(e, env)
 		case _set:
-			d, err := getSymbol(cadr(e))
-			if err != nil {
-				return nil, err
-			}
-			val, err := eval(caddr(e), env)
-			if err != nil {
-				return nil, err
-			}
-			env.Find(d).Bind(d, val)
-			return _ok, nil
+			return evalSet(e, env)
 		case _if:
-			test, _ := eval(cadr(e), env)
-			if isTrue(test) {
-				return eval(caddr(e), env)
-			} else if listLen(e) > 3 {
-				return eval(cadddr(e), env)
-			}
-			return Empty, nil
+			return evalIf(e, env)
 		case _let:
-			letExpr, err := let(cdr(e), env)
-			if err != nil {
-				return nil, err
-			}
-			return letExpr, nil
+			return evalLet(e, env)
 		case _begin:
 			return evalSequential(cdr(e), env)
 		case _quit:
@@ -280,6 +251,50 @@ func eval(expr Data, env *Env) (Data, error) {
 		return nil, nil
 	}
 	return nil, fmt.Errorf("Unparsable expression: %v", expr)
+}
+
+func evalDefine(e *Pair, env *Env) (Data, error) {
+	expr, err := getPair(cdr(e))
+	if err != nil {
+		return nil, err
+	}
+	err = definition(expr, env)
+	if err != nil {
+		return nil, err
+	}
+	// Return value of define is undefined
+	return _ok, nil
+}
+
+func evalSet(e *Pair, env *Env) (Data, error) {
+	d, err := getSymbol(cadr(e))
+	if err != nil {
+		return nil, err
+	}
+	val, err := eval(caddr(e), env)
+	if err != nil {
+		return nil, err
+	}
+	env.Find(d).Bind(d, val)
+	return _ok, nil
+}
+
+func evalIf(e *Pair, env *Env) (Data, error) {
+	test, _ := eval(cadr(e), env)
+	if isTrue(test) {
+		return eval(caddr(e), env)
+	} else if listLen(e) > 3 {
+		return eval(cadddr(e), env)
+	}
+	return Empty, nil
+}
+
+func evalLet(e *Pair, env *Env) (Data, error) {
+	letExpr, err := let(cdr(e), env)
+	if err != nil {
+		return nil, err
+	}
+	return letExpr, nil
 }
 
 func evalSequential(e Data, env *Env) (Data, error) {
